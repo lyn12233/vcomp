@@ -14,6 +14,7 @@ add_library(vcomp_flags INTERFACE)
 # 1. config
 set(VCOMP_ENABLE_TESTS ON CACHE BOOL "build tests")
 set(VCOMP_ENABLE_LOGGING ON CACHE BOOL "print error messages using provided callback")
+set(VCOMP_ENABLE_ASAN ON CACHE BOOL "enable asan")
 
 # 2. global incdir
 target_include_directories(vcomp_flags INTERFACE 
@@ -33,6 +34,38 @@ target_compile_definitions(vcomp_flags INTERFACE
     $<$<PLATFORM_ID:Windows>:_CRT_SECURE_NO_WARNINGS=1> # yah
     $<$<PLATFORM_ID:Windows>:fseeko=_fseeki64;ftello=_ftelli64>
 )
+if(VCOMP_ENABLE_ASAN)
+    if(CMAKE_BUILD_TYPE MATCHES "[Dd]ebug")
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND CMAKE_SYSTEM_NAME MATCHES "[Ww]indows")
+            message(STATUS "[3] enabling asan")
+            # find asan lib
+            execute_process(
+                COMMAND ${CMAKE_C_COMPILER} -print-resource-dir
+                OUTPUT_VARIABLE CLANG_RESOURCE_DIR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            if (CMAKE_SIZEOF_VOID_P EQUAL 8) # x86-64
+                set(ASAN_LIB "${CLANG_RESOURCE_DIR}/lib/windows/clang_rt.asan_dynamic-x86_64.lib")
+                set(ASAN_DLL "${CLANG_RESOURCE_DIR}/lib/windows/clang_rt.asan_dynamic-x86_64.dll")
+            else()
+                set(ASAN_LIB "${CLANG_RESOURCE_DIR}/lib/windows/clang_rt.asan_dynamic-i386.lib")
+                set(ASAN_DLL "${CLANG_RESOURCE_DIR}/lib/windows/clang_rt.asan_dynamic-i386.dll")
+            endif()
+            string(REPLACE "\\" "/" ASAN_LIB "${ASAN_LIB}")
+            string(REPLACE "\\" "/" ASAN_DLL "${ASAN_DLL}")
+            message(STATUS "[3] asan lib: ${ASAN_LIB}")
+            if(EXISTS "${ASAN_LIB}" AND EXISTS "${ASAN_DLL}")
+                message(STATUS "[3] asan lib found")
+            else()
+                message(FATAL_ERROR "[3] asan lib not found")
+            endif()
+            # compiler flags not set globally because vcpkg+gtest may be weird
+        endif()
+    else()
+        message(STATUS "[3] VCOMP_ENABLE_ASAN is on, but disabled for non debug build")
+        set(VCOMP_ENABLE_ASAN OFF)
+    endif()
+endif()
 
 # 4. libs
 file(GLOB vcomp_math_src "src/math/*.c")

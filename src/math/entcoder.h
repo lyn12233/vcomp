@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdio.h>
 
 /** @defgroup entropy_coding
  entropy coding is to represent symbol with approximately -log2(p) bits,
@@ -73,6 +74,13 @@ int c1ent_enc_init(c1ent_enc_t *enc, uint32_t sz);
 int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym);
 
 uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes);
+
+static void c1ent_enc_repr(const c1ent_enc_t *enc, FILE *f) {
+    fprintf(f, "Encoder(bufferSize=%u,PrecarrySize=%u,offset=%u,low=%08x,rng=%04x,cnt=%d)\n", //
+            enc->buf_sz, enc->precarry_sz, enc->offs, enc->low, enc->rng, enc->cnt);
+}
+
+int c1ent_enc_clear(c1ent_enc_t *enc);
 
 /** init decoder context
  comfirmant to #8.2.2 (?)

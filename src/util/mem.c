@@ -1,6 +1,9 @@
 #include "mem.h"
+#include "log.h"
 
+#include <ctype.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -128,4 +131,31 @@ int c1_sptr_decref(c1_sptr_t **p) {
         return 0;
     }
     return -1;
+}
+
+void c1_dump_buf(void *buf, uint32_t sz) {
+    c1_dump_buf_f(stdout, buf, sz);
+}
+
+void c1_dump_buf_f(FILE *fp, void *data, uint32_t len) {
+    info("\033[38;5;10mbuffer[%u]:\033[0m\r\n", len);
+    const uint8_t *p = data;
+    for (size_t i = 0; i < len; i += 16) {
+        fprintf(fp, "%.4u:", (int)i);
+        for (size_t j = i; j < i + 16; j++) {
+            if (j < len)
+                fprintf(fp, "%02x ", p[j]);
+            else
+                fprintf(fp, "   ");
+        }
+        fprintf(fp, " ");
+        for (size_t j = i; j < i + 16 && j < len; j++) {
+            if (p[j] < 128 && isprint(p[j])) {
+                fprintf(fp, "%c", p[j]);
+            } else {
+                fprintf(fp, ".");
+            }
+        }
+        fprintf(fp, "\r\n");
+    }
 }

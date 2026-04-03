@@ -59,7 +59,7 @@ int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym) 
     if (s >= 0) {
         // extend 2 slots(32bits) for output
         if (enc->offs + 2 > enc->precarry_sz) {
-            uint32_t sz2 = enc->precarry_sz * 3 / 2 + 2;
+            uint32_t sz2 = enc->precarry_sz * 2 + 2;
             if (!(enc->precarry_buf = realloc(enc->precarry_buf, sizeof(uint16_t) * sz2))) {
                 return -1;
             }
@@ -98,7 +98,7 @@ uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes) {
     if (s > 0) {
         // expand storage to hold ((c+9)/8+1) bytes
         if (enc->offs + ((s + 7) >> 3) > enc->precarry_sz) {
-            uint32_t sz2 = enc->precarry_sz * 3 / 2 + ((s + 7) >> 3);
+            uint32_t sz2 = enc->precarry_sz * 2 + ((s + 7) >> 3);
             if (!(enc->precarry_buf = realloc(enc->precarry_buf, sizeof(uint16_t) * sz2))) {
                 return NULL;
             }
@@ -123,6 +123,7 @@ uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes) {
             warning("malloc failed");
             return NULL;
         }
+        enc->buf_sz = sz2;
     }
     uint8_t *out = enc->buf + enc->buf_sz - offs;
     *nbytes = offs, carry = 0;
@@ -135,6 +136,25 @@ uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes) {
 
     return out;
 }
+
+int c1ent_enc_clear(c1ent_enc_t *enc) {
+    int res = 0;
+    if (enc->buf) {
+        free(enc->buf), enc->buf_sz = 0;
+    } else {
+        warning2("enc->buf is null ptr");
+        res = -1;
+    }
+    if (enc->precarry_buf) {
+        free(enc->precarry_buf), enc->precarry_sz = 0;
+    } else {
+        warning2("enc->precarry_buf is null ptr");
+        res = -1;
+    }
+    return res;
+}
+
+// --- decoder part
 
 int c1ent_dec_init(c1ent_dec_t *dec, uint32_t sz, //
                    int (*read_bits)(void *ctx, uint32_t bits), void *ctx) {

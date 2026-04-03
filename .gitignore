@@ -2,3 +2,4 @@
 /vcpkg_installed
 .*/
 /hello.cpp
+log*.txt
