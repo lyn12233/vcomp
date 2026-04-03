@@ -1,0 +1,21 @@
+{
+  "dependencies": [
+    {
+      "name": "fmt",
+      "version>=": "12.1.0"
+    },
+    {
+      "name": "opencv2",
+      "version>=": "2.4.13.7#25"
+    },
+    {
+      "name": "spdlog",
+      "version>=": "1.17.0"
+    },
+    {
+      "name": "gtest",
+      "version>=": "1.16.0"
+    }
+  ],
+  "builtin-baseline": "c3867e714dd3a51c272826eea77267876517ed99"
+}

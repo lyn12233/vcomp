@@ -1,0 +1,10 @@
+BasedOnStyle: LLVM
+AlignEscapedNewlines: LeftWithLastLine
+AlignOperands: AlignAfterOperator
+AllowShortFunctionsOnASingleLine: Empty
+BreakAfterAttributes: Leave
+BreakBeforeBinaryOperators: All
+ColumnLimit: 120
+IndentPPDirectives: BeforeHash
+IndentWidth: 4
+LineEnding: CRLF
