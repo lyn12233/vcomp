@@ -1,0 +1,4 @@
+# 2026.04.04
+- [ ] entropy coding: test cdf update in some way? 
+    implement decoder exit and test?
+# 2026.04.05

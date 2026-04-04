@@ -1,0 +1,6 @@
+/build
+/vcpkg_installed
+.*/
+/hello.cpp
+log*.txt
+/test/entenc.cpp

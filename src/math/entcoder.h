@@ -107,9 +107,21 @@ int c1ent_decode_cdf(c1ent_dec_t *dec,                                      //
                      int (*read_bits)(void *ctx, uint32_t bits), void *ctx, //
                      uint16_t *cdf, int nbsym);
 
+// --- misc
+
 /** update the cdf accroding to the current symbol
  */
 void c1ent_update_cdf(uint16_t *cdf, int sym, int nbsym);
+
+/** a simple wrapper for string as bitstream */
+typedef struct {
+    const uint8_t *data;
+    // size of data and offset in data (per bits)
+    uint32_t sz, offs;
+} c1ent_strstrm_t;
+
+/** read no more than 16 bits, compatible to read_bits param in dec functions */
+int c1ent_strstrm_read_bits16(void *ctx, uint32_t bits);
 
 #ifdef __cplusplus
 }

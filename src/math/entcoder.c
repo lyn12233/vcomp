@@ -260,3 +260,22 @@ void c1ent_update_cdf(uint16_t *cdf, int sym, int nbsym) {
     }
     cdf[nbsym] += (cdf[nbsym] < 32);
 }
+
+static uint8_t c1ent__strstrm_get(c1ent_strstrm_t *strm, uint32_t offs) {
+    uint8_t c = strm->data[offs / 8];
+    return (c >> (7 - offs % 8)) & 1;
+}
+
+int c1ent_strstrm_read_bits16(void *ctx, uint32_t bits) {
+    c1ent_strstrm_t *strm = (c1ent_strstrm_t *)ctx;
+    if (bits > 16 || strm->offs > strm->sz || strm->sz - strm->offs < bits) {
+        return -1;
+    }
+    int res = 0;
+    for (int i = 0; i < bits; i++) {
+        // info("value %d at bit %u", c1ent__strstrm_get(strm, strm->offs + i), strm->offs + i);
+        res = (res << 1) + c1ent__strstrm_get(strm, strm->offs + i);
+    }
+    strm->offs += bits;
+    return res;
+}
