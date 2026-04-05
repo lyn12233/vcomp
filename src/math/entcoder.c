@@ -169,7 +169,7 @@ int c1ent_dec_init(c1ent_dec_t *dec, uint32_t sz, //
     */
     dec->num_bits = (sz == 1) ? 8 : 15;
     if ((dec->buf = read_bits(ctx, dec->num_bits)) < 0) {
-        warning("cant read %d bits", dec->num_bits);
+        warning2("cant read %d bits", dec->num_bits);
         return -1;
     }
     dec->padded_buf = (sz == 1) ? dec->buf << 7 : dec->buf;
@@ -189,6 +189,18 @@ int c1ent_dec_exit(c1ent_dec_t *dec, //
         - assure bits from trailingPos to paddingEndPos(exclude) is 0
         this shows that entropy coding unit is <sz> bytes with 15 trailing zeros
      */
+    if (dec->max_bits < -14) {
+        warning2("max_bits=%d is invalid", dec->max_bits);
+        return -1;
+    }
+    int bits = dec->max_bits > 0 ? dec->max_bits : 0;
+    for (int i = 0; i < bits; i += 16) {
+        int r = read_bits(ctx, i + 16 <= bits ? 16 : bits - i);
+        if (r != 0) {
+            warning2("expect zeros, but %d", r);
+            return -1;
+        }
+    }
     return 0;
 }
 
@@ -233,7 +245,7 @@ int c1ent_decode_cdf(c1ent_dec_t *dec,                                      //
     // clip number of bits to read to (0, max_bits)
     dec->num_bits = (bits <= dec->max_bits) ? bits : c1ent__max(dec->max_bits, 0);
     if ((dec->buf = read_bits(ctx, dec->num_bits)) < 0) {
-        warning("cant read %d bits", dec->num_bits);
+        warning2("cant read %d bits", dec->num_bits);
         return -1;
     }
     // for bits not read, fill with 0's

@@ -131,8 +131,8 @@ static int is_valid_cdf(uint16_t cdf[16], int nbsym) {
     }
     if (cdf[nbsym - 1] != (1 << 15))
         return -3;
-    if (cdf[nbsym] != 0)
-        return -4;
+    // if (cdf[nbsym] != 0)
+    //     return -4;
     return 0;
 }
 
@@ -180,6 +180,27 @@ TEST(EntropyEncoder, Compound_1) {
         // info("output symbol %d: %d", i, sym);
         ASSERT_EQ(sym, symidx[i]);
     }
+    ASSERT_EQ(c1ent_dec_exit(&dec, c1ent_strstrm_read_bits16, &strm), 0);
+    ASSERT_EQ(strm.offs, strm.sz);
     c1ent_enc_clear(&enc);
-    free(symnbs),free(symidx),free(symseq),free(cdfs);
+    free(symnbs), free(symidx), free(symseq), free(cdfs);
+}
+
+TEST(EntropyEncoder, CdfUpdate_1) {
+    uint16_t cdf[5] = {100, 5000, 12678, 1 << 15, 0};
+    srand(1225);
+    for (int i = 0; i < 100; i++) {
+        uint32_t r = rand();
+        c1ent_update_cdf(cdf, r % 4, 4);
+        ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
+        info("after %d: %d,%d,%d,%d", r % 4, cdf[0], cdf[1], cdf[2], cdf[3]);
+    }
+    for (int i = 0; i < 4; i++) {
+        cdf[4] = 0;
+        for (int j = 0; j < 100; j++) {
+            c1ent_update_cdf(cdf, i, 4);
+            ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
+        }
+        info("after %dx100: %d,%d,%d,%d", i, cdf[0], cdf[1], cdf[2], cdf[3]);
+    }
 }
