@@ -22,6 +22,7 @@ miminal modifications to the includes and macros
 const int32_t c1tx_cospi_arr_data[4][64];
 static int32_t c1tx__half_btf(int32_t w0, int32_t in0, int32_t w1, int32_t in1, int bit);
 int32_t c1tx_round_shift(int64_t value, int bit);
+static int64_t c1tx__clamp64(int64_t x, int64_t lb, int64_t ub);
 #ifndef av1_range_check_buf
     #define av1_range_check_buf(...)
     #define cospi_arr(cos_bit) c1tx_cospi_arr_data[cos_bit - 10]
@@ -32,7 +33,7 @@ int32_t c1tx_round_shift(int64_t value, int bit);
     #define NewSqrt2 0
     #define NewSqrt2Bits 12
 #endif
-#define clamp_value(x, ...) (x)
+#define clamp_value(x, ...) c1tx__clamp64(x, -(1 << (16 - 1)), (1 << (16 - 1)) - 1)
 
 #define av1_idct4 static c1tx__av1_idct4
 #define av1_idct8 static c1tx__av1_idct8

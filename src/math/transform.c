@@ -271,7 +271,12 @@ mkfunc(c1tx__iden_8, c1tx__av1_iden8);
 mkfunc(c1tx__iden_16, c1tx__av1_iden16);
 mkfunc(c1tx__iden_32, c1tx__av1_iden32);
 #include "src/math/ref/av1_inv_txfm1d.c"
-mkfunc(c1tx__idct_8, c1tx__av1_idct8);
+// mkfunc(c1tx__idct_8, c1tx__av1_idct8);
+static void c1tx__idct_8(const int32_t* i,int32_t*o, int8_t cos_bit){
+    // info("input is (%d, %d, %d, %d, %d, %d, %d, %d)",i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7]);
+    c1tx__av1_idct8(i,o,cos_bit,NULL);
+    // info("output is (%d, %d, %d, %d, %d, %d, %d, %d)",o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7]);
+}
 mkfunc(c1tx__idct_16, c1tx__av1_idct16);
 mkfunc(c1tx__idct_32, c1tx__av1_idct32);
 mkfunc(c1tx__idct_64, c1tx__av1_idct64);

@@ -24,9 +24,9 @@ static int c1_mpool__msksz(const c1_mpool_t *p) {
 static int c1_mpool__freeidx(const c1_mpool_t *p, c1_mpool__node_t *n) {
     uint8_t *msk = n->data + p->sz * p->nb;
     for (int i = 0; i < p->nb; i += 8) {
-        if (~msk[i / 8]) {
+        if (msk[i / 8]!=0xff) {
             uint8_t bytemsk = 1;
-            while ((~msk[i / 8]) & bytemsk && i < p->nb) {
+            while ((msk[i / 8] & bytemsk) && i < p->nb) {
                 bytemsk <<= 1, i++;
             }
             return i;
@@ -55,6 +55,7 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
 
     // no empty slot, extend the list
     if (!n) {
+        debug("mpool extend list");
         c1_mpool__node_t **lnk = prev ? &prev->next : (c1_mpool__node_t **)&p->root_;
         *lnk = (c1_mpool__node_t *)malloc(sizeof(c1_mpool__node_t) + (p->sz * p->nb) + c1_mpool__msksz(p));
         // todo: assert malloc
@@ -65,6 +66,7 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
 
     // find first available offs
     int offs = c1_mpool__freeidx(p, n);
+    debug("mpool found free idx %d at node %p",offs,n);
     // set bit msk
     uint8_t *msk = n->data + p->sz * p->nb;
     uint8_t bytemsk = 1 << (offs % 8);
