@@ -122,14 +122,16 @@ int c1_sptr_incref(c1_sptr_t **p) {
     return -1;
 }
 int c1_sptr_decref(c1_sptr_t **p) {
-    if ((*p) && (*p)->cnt_ < C1_SPTR_CNTMAX && (*p)->cnt_ > 0) {
-        (*p)->cnt_--;
+    if ((*p) && (*p)->cnt_ > 0) {
+        if ((*p)->cnt_ < C1_SPTR_CNTMAX)
+            (*p)->cnt_--;
         if ((*p)->cnt_ == 0) {
             (*p)->dtor_((*p)->ptr);
             *p = NULL;
         }
         return 0;
     }
+    warning2("invalid cnt/ptr");
     return -1;
 }
 

@@ -5,14 +5,28 @@
 #include <stdlib.h>
 #include <string.h>
 
-static uint8_t c1_pixbuf__sz(PIXBUF_TYPE t) {
-    static const uint8_t map[6] = {1, 3, 2, 6, 4, 12};
+static uint8_t c1pb__sz(PIXBUF_TYPE t) {
+    static const uint8_t map[C1_PIXBUF_TYPE_CNT] = {1, 3, 2, 6, 4, 12, 4, 12};
     return map[t];
 }
+static const char *c1pb__type2str(PIXBUF_TYPE t) {
+    static const char *map[C1_PIXBUF_TYPE_CNT] = {
+        "C1I8", "C3I8", "C1I16", "C3I16", "C1I32", "C3I32", "C1F32", "C3F32",
+    };
+    return map[t];
+}
+static const char *c1pb__bool2str(uint8_t b) {
+    return b ? "true" : "false";
+}
+
 // stt,end,step to stt,nb,step
-static void c1_pixbuf__norm_slice(const c1_pixbuf_t *pix, int s[3]) {
-    s[0] = s[0] < 0 ? s[0] + pix->h : s[0], s[1] = s[1] < 0 ? s[1] + pix->w : s[1];
-    assert_fatal(s[0] >= 0 && s[0] < pix->h && s[1] >= 0 && s[1] < pix->w && s[2] != 0);
+static void c1pb__norm_slice(uint16_t sz, int s[3]) {
+    s[0] = s[0] < 0 ? s[0] + sz : s[0], s[1] = s[1] < 0 ? s[1] + sz : s[1];
+    assert_fatal(s[0] == C1_PIXBUF_NONE || s[0] >= 0 && s[0] <= sz);
+    assert_fatal(s[1] == C1_PIXBUF_NONE || s[1] >= 0 && s[1] <= sz);
+    assert_fatal(s[2] != 0);
+    s[0] = s[0] == C1_PIXBUF_NONE ? (s[2] < 0 ? sz - 1 : 0) : s[0];
+    s[1] = s[1] == C1_PIXBUF_NONE ? (s[2] < 0 ? -1 : sz) : s[1];
     if (s[2] < 0) {
         int temp = s[0];
         s[0] = s[1] + 1;
@@ -25,16 +39,16 @@ static void c1_pixbuf__norm_slice(const c1_pixbuf_t *pix, int s[3]) {
 
 c1_pixbuf_t c1_pixbuf_create(uint8_t type, uint16_t h, uint16_t w) {
     assert_fatal(h < C1_PIXBUF_LENMAX && w < C1_PIXBUF_LENMAX);
-    void *data = malloc(h * w * c1_pixbuf__sz(type));
+    void *data = malloc(h * w * c1pb__sz(type));
     assert_fatal(data);
-    memset(data, 0, h * w * c1_pixbuf__sz(type));
+    memset(data, 0, h * w * c1pb__sz(type));
     c1_sptr_t *p = c1_sptr_create(data, free);
     return (c1_pixbuf_t){type, 0, 0, h, w, w, 1, 0, p};
 }
 c1_pixbuf_t c1_pixbuf_fromview(const c1_pixbuf_t *pix, int h_slice[3], int w_slice[3]) {
     // check inverse, normalize and check h_slice
     uint8_t h_inv = h_slice[2] < 0, w_inv = w_slice[2] < 0;
-    c1_pixbuf__norm_slice(pix, h_slice), c1_pixbuf__norm_slice(pix, w_slice);
+    c1pb__norm_slice(pix->h, h_slice), c1pb__norm_slice(pix->w, w_slice);
     // gen new pixbuf
     c1_pixbuf_t res = {
         pix->type,
@@ -53,12 +67,50 @@ c1_pixbuf_t c1_pixbuf_fromview(const c1_pixbuf_t *pix, int h_slice[3], int w_sli
 void *c1_pixbuf_get(c1_pixbuf_t *pix, int y, int x) {
     y = y < 0 ? y + pix->h : y, x = x < 0 ? x + pix->w : x;
     assert_fatal(y >= 0 && y < pix->h && x >= 0 && x < pix->w);
+    if (pix->h_inv)
+        y = pix->h - 1 - y;
+    if (pix->w_inv)
+        x = pix->w - 1 - x;
     uint8_t *data = (uint8_t *)pix->buf->ptr;
-    return data + (pix->offs + pix->h_stride * y + pix->w_stride * x) * c1_pixbuf__sz(pix->type);
+    return data + (pix->offs + pix->h_stride * y + pix->w_stride * x) * c1pb__sz(pix->type);
 }
 int c1_pixbuf_clear(c1_pixbuf_t *pix) {
-    if (c1_sptr_incref(&pix->buf) < 0)
+    if (c1_sptr_decref(&pix->buf) < 0)
         return -1;
     pix->h = pix->w = 0;
     return 0;
+}
+
+void c1_pixbuf_repr(FILE *f, const c1_pixbuf_t *pix) {
+    fprintf(f, "PixelBuffer[%u, %u, %s](\r\n", pix->h, pix->w, c1pb__type2str(pix->type));
+    for (int y = 0; y < pix->h; y++) {
+        if (y + 10 < pix->h && y > 10) {
+            fprintf(f, "  ...\r\n");
+            y = pix->h - 10;
+        } else {
+            fprintf(f, "  [");
+            for (int x = 0; x < pix->w; x++) {
+                if (x + 10 < pix->w && x > 10) {
+                    fprintf(f, "... ");
+                    x = pix->w - 10; // no overflow
+                } else {
+                    switch (pix->type) {
+                    case PIXBUF_C1I8: {
+                        const uint8_t *p = c1_pixbuf_getc(pix, y, x);
+                        fprintf(f, "%02x ", *p);
+                    } break;
+                    case PIXBUF_C1I32: {
+                        const int32_t *p = c1_pixbuf_getc(pix, y, x);
+                        fprintf(f, "%06d ", *p);
+                    } break;
+                    default: {
+                        fprintf(f, "? ");
+                    } break;
+                    }
+                }
+            }
+            fprintf(f, "]\r\n");
+        }
+    }
+    fprintf(f, ")\r\n");
 }
