@@ -1,12 +1,13 @@
 #include "transform.h"
 #include "src/util/log.h"
+#include "util/pixbuf.h"
 
 #include <limits.h>
 #include <stdint.h>
 
 // get column 1d tranxform type, silent invalid combinations, like 64x64 ident
-static c1_tx1d_type_t c1tx__get_col_type(c1_tx2d_size_t sz, c1_tx2d_type_t tp) {
-    static const c1_tx1d_type_t lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
+static C1_TX_1D_TYPE c1tx__get_col_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
+    static const C1_TX_1D_TYPE lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
         {TX1TYPE_DCT_8, TX1TYPE_IDEN_8, TX1TYPE_DCT_8, TX1TYPE_IDEN_8},
         {TX1TYPE_DCT_16, TX1TYPE_IDEN_16, TX1TYPE_DCT_16, TX1TYPE_IDEN_16},
         {TX1TYPE_DCT_32, TX1TYPE_IDEN_32, TX1TYPE_DCT_32, TX1TYPE_IDEN_32},
@@ -16,8 +17,8 @@ static c1_tx1d_type_t c1tx__get_col_type(c1_tx2d_size_t sz, c1_tx2d_type_t tp) {
 }
 
 // get row 1d tx type, see above
-static c1_tx1d_type_t c1tx__get_row_type(c1_tx2d_size_t sz, c1_tx2d_type_t tp) {
-    static const c1_tx1d_type_t lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
+static C1_TX_1D_TYPE c1tx__get_row_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
+    static const C1_TX_1D_TYPE lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
         {TX1TYPE_DCT_8, TX1TYPE_DCT_8, TX1TYPE_IDEN_8, TX1TYPE_IDEN_8},
         {TX1TYPE_DCT_16, TX1TYPE_DCT_16, TX1TYPE_IDEN_16, TX1TYPE_IDEN_16},
         {TX1TYPE_DCT_32, TX1TYPE_DCT_32, TX1TYPE_IDEN_32, TX1TYPE_IDEN_32},
@@ -26,19 +27,19 @@ static c1_tx1d_type_t c1tx__get_row_type(c1_tx2d_size_t sz, c1_tx2d_type_t tp) {
     return lookup[sz][tp];
 }
 
-static uint8_t c1tx__get_col_sz(c1_tx2d_size_t sz) {
+static uint8_t c1tx__get_col_sz(C1_TX_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
     return lookup[sz];
 }
-static uint8_t c1tx__get_row_sz(c1_tx2d_size_t sz) {
+static uint8_t c1tx__get_row_sz(C1_TX_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
     return lookup[sz];
 }
-static uint8_t c1tx__get_col_sz_idx(c1_tx2d_size_t sz) {
+static uint8_t c1tx__get_col_sz_idx(C1_TX_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {0, 1, 2, 3};
     return lookup[sz];
 }
-static uint8_t c1tx__get_row_sz_idx(c1_tx2d_size_t sz) {
+static uint8_t c1tx__get_row_sz_idx(C1_TX_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {0, 1, 2, 3};
     return lookup[sz];
 }
@@ -171,6 +172,9 @@ static int32_t c1tx__half_btf(int32_t w0, int32_t in0, int32_t w1, int32_t in1, 
 }
 
 int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf) {
+    assert_fatal(input->type == C1_PIXBUF_C1I16);
+    assert_fatal(output->type == C1_PIXBUF_C1I32);
+
     c1tx_extend_option(opt);
     const c1tx_func_t col_func = c1tx_func_array[opt->txtype_col];
     const c1tx_func_t row_func = c1tx_func_array[opt->txtype_row];
@@ -184,7 +188,7 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
             fatal2("unimpl");
         } else {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
-                temp_in[row] = *c1_pixbuf_geti32(input, row, col);
+                temp_in[row] = *c1_pixbuf_geti16(input, row, col);
             }
         }
         c1tx_round_shift_array(temp_in, opt->txsize_row, -shift[0]);
@@ -210,6 +214,9 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
     return 0;
 }
 int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf) {
+    assert_fatal(input->type == C1_PIXBUF_C1I32);
+    assert_fatal(output->type == C1_PIXBUF_C1I16);
+
     c1tx_extend_option(opt);
     const c1tx_func_t col_func = c1tx_inv_func_array[opt->txtype_col];
     const c1tx_func_t row_func = c1tx_inv_func_array[opt->txtype_row];
@@ -245,7 +252,7 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
         } else {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
                 // suppose bitdepth is 8bit, clamps to 255
-                int32_t *out = c1_pixbuf_geti32(output, row, col);
+                int16_t *out = c1_pixbuf_geti16(output, row, col);
                 *out = c1tx__clamp64((int64_t)*out + temp_out[row], 0, 255);
             }
         } // </flip?>
@@ -259,9 +266,9 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
         y(i, o, bit, NULL);                                   \
     }
 // mkfunc(c1tx__dct_8, c1tx__av1_fdct8);
-static void c1tx__dct_8(const int32_t* i,int32_t*o, int8_t cos_bit){
+static void c1tx__dct_8(const int32_t *i, int32_t *o, int8_t cos_bit) {
     // info("input is (%d, %d, %d, %d, %d, %d, %d, %d)",i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7]);
-    c1tx__av1_fdct8(i,o,cos_bit,NULL);
+    c1tx__av1_fdct8(i, o, cos_bit, NULL);
     // info("output is (%d, %d, %d, %d, %d, %d, %d, %d)",o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7]);
 }
 mkfunc(c1tx__dct_16, c1tx__av1_fdct16);
@@ -272,9 +279,9 @@ mkfunc(c1tx__iden_16, c1tx__av1_iden16);
 mkfunc(c1tx__iden_32, c1tx__av1_iden32);
 #include "src/math/ref/av1_inv_txfm1d.c"
 // mkfunc(c1tx__idct_8, c1tx__av1_idct8);
-static void c1tx__idct_8(const int32_t* i,int32_t*o, int8_t cos_bit){
+static void c1tx__idct_8(const int32_t *i, int32_t *o, int8_t cos_bit) {
     // info("input is (%d, %d, %d, %d, %d, %d, %d, %d)",i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7]);
-    c1tx__av1_idct8(i,o,cos_bit,NULL);
+    c1tx__av1_idct8(i, o, cos_bit, NULL);
     // info("output is (%d, %d, %d, %d, %d, %d, %d, %d)",o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7]);
 }
 mkfunc(c1tx__idct_16, c1tx__av1_idct16);

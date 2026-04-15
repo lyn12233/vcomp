@@ -40,7 +40,7 @@ enum {
     TX2SZ_32_32,
     TX2SZ_64_64,
 };
-typedef uint8_t c1_tx2d_size_t;
+typedef uint8_t C1_TX_2D_SZ;
 
 enum {
     TX1TYPE_DCT_8,
@@ -53,7 +53,7 @@ enum {
     // TXTYPE_ADST_8,
     // TXTYPE_ADST_16,
 };
-typedef uint8_t c1_tx1d_type_t;
+typedef uint8_t C1_TX_1D_TYPE;
 
 enum {
     TX2TYPE_DCT_DCT,
@@ -64,11 +64,11 @@ enum {
     // TXTYPE_H_ADST,
     // TXTYPE_V_ADST,
 };
-typedef uint8_t c1_tx2d_type_t;
+typedef uint8_t C1_TX_2D_TYPE;
 
 struct c1tx_option_s {
-    c1_tx2d_size_t txsize;
-    c1_tx2d_type_t txtype;
+    C1_TX_2D_SZ txsize;
+    C1_TX_2D_TYPE txtype;
     // these options are determined from the former ones.
     // they are used for both forward and inverse transform
     uint8_t cos_bit_col, cos_bit_row;
@@ -84,13 +84,19 @@ int c1tx_extend_option(c1tx_option_t *opt);
 int32_t c1tx_round_shift(int64_t value, int bit);
 void c1tx_round_shift_array(int32_t *arr, int size, int bit);
 
-/** perform forward transform based on option struct
+/** perform 2D forward transform based on option struct
  note: (1) input and output can be the same
+ @param input input pixel buffer, color format c1i16
+ @param output output pixel buffer, should be at least the size of input, c1i32
  @param buf caller should provide temporary storage of middle result.
  should be a compact space of int32_t[txh*txw]. this provides an option not to alloc on stack
  @param opt transform option, now only needs 2d transform type and size. other fields are extended
 */
 int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf);
+/** perform 2D inerse transform
+ @param input color format c1i32
+ @param output color format c1i16
+ */
 int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf);
 
 #ifdef __cplusplus

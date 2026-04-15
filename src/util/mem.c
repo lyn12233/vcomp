@@ -22,9 +22,9 @@ static int c1_mpool__msksz(const c1_mpool_t *p) {
 }
 
 static int c1_mpool__freeidx(const c1_mpool_t *p, c1_mpool__node_t *n) {
-    uint8_t *msk = n->data + p->sz * p->nb;
+    uint8_t *msk = n->data + (int)p->sz * p->nb;
     for (int i = 0; i < p->nb; i += 8) {
-        if (msk[i / 8]!=0xff) {
+        if (msk[i / 8] != 0xff) {
             uint8_t bytemsk = 1;
             while ((msk[i / 8] & bytemsk) && i < p->nb) {
                 bytemsk <<= 1, i++;
@@ -36,7 +36,7 @@ static int c1_mpool__freeidx(const c1_mpool_t *p, c1_mpool__node_t *n) {
 }
 
 static int c1_mpool__node_isempty(const c1_mpool_t *p, c1_mpool__node_t *n) {
-    uint8_t *msk = n->data + p->sz * p->nb;
+    uint8_t *msk = n->data + (int)p->sz * p->nb;
     for (int i = 0; i < p->nb; i += 8) {
         if (msk[i / 8]) {
             return 0;
@@ -57,18 +57,18 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
     if (!n) {
         debug("mpool extend list");
         c1_mpool__node_t **lnk = prev ? &prev->next : (c1_mpool__node_t **)&p->root_;
-        *lnk = (c1_mpool__node_t *)malloc(sizeof(c1_mpool__node_t) + (p->sz * p->nb) + c1_mpool__msksz(p));
+        *lnk = (c1_mpool__node_t *)malloc(sizeof(c1_mpool__node_t) + (int)p->sz * p->nb + c1_mpool__msksz(p));
         // todo: assert malloc
         n = *lnk;
         n->next = NULL;
-        memset(n->data + p->sz * p->nb, 0, c1_mpool__msksz(p));
+        memset(n->data + (int)p->sz * p->nb, 0, c1_mpool__msksz(p));
     }
 
     // find first available offs
     int offs = c1_mpool__freeidx(p, n);
-    debug("mpool found free idx %d at node %p",offs,n);
+    debug("mpool found free idx %d at node %p", offs, n);
     // set bit msk
-    uint8_t *msk = n->data + p->sz * p->nb;
+    uint8_t *msk = n->data + (int)p->sz * p->nb;
     uint8_t bytemsk = 1 << (offs % 8);
     msk[offs / 8] |= bytemsk;
 
@@ -79,7 +79,7 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
     c1_mpool__node_t *n = (c1_mpool__node_t *)(p->root_);
     c1_mpool__node_t *prev = NULL;
     uint8_t *pbuf = (uint8_t *)buf;
-    while (n && (n->data > pbuf || n->data + p->sz * p->nb <= pbuf)) {
+    while (n && (n->data > pbuf || n->data + (int)p->sz * p->nb <= pbuf)) {
         prev = n;
         n = n->next;
     }
@@ -89,11 +89,12 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
         return -1;
     // try to unset msk
     int offs = (pbuf - n->data) / p->sz;
-    uint8_t *msk = n->data + p->sz * p->nb;
+    uint8_t *msk = n->data + (int)p->sz * p->nb;
     uint8_t bytemsk = 1 << (offs % 8);
     if (!(msk[offs / 8] & bytemsk))
         return -1;
     msk[offs / 8] &= ~bytemsk;
+    debug("mpool free idx %d at node %p", offs, n);
 
     // try to del node if empty
     if (c1_mpool__node_isempty(p, n)) {
@@ -101,6 +102,7 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
         c1_mpool__node_t *next = n->next;
         *lnk = next;
         free(n);
+        debug("mpool free node %p", n);
     }
 
     return 0;
@@ -128,7 +130,9 @@ int c1_sptr_decref(c1_sptr_t **p) {
         if ((*p)->cnt_ < C1_SPTR_CNTMAX)
             (*p)->cnt_--;
         if ((*p)->cnt_ == 0) {
+            debug("sptr count to 0");
             (*p)->dtor_((*p)->ptr);
+            c1_mpool_dealloc(&c1_sptr__pool, *p);
             *p = NULL;
         }
         return 0;

@@ -68,17 +68,22 @@ if(VCOMP_ENABLE_ASAN)
 endif()
 
 # 4. libs
-file(GLOB vcomp_math_src "src/math/*.c")
-add_library(vcomp_math ${vcomp_math_src})
-target_include_directories(vcomp_math PRIVATE "src/math")
-target_link_libraries(vcomp_math PRIVATE vcomp_flags)
-
 file(GLOB vcomp_util_src "src/util/*.c")
 add_library(vcomp_util ${vcomp_util_src})
 target_include_directories(vcomp_util PRIVATE "src/util")
 target_link_libraries(vcomp_util PRIVATE vcomp_flags)
 
-# file(GLOB vcomp_enc_src "src/encode/*.c")
+file(GLOB vcomp_math_src "src/math/*.c")
+add_library(vcomp_math ${vcomp_math_src})
+target_include_directories(vcomp_math PRIVATE "src/math")
+target_link_libraries(vcomp_math PRIVATE vcomp_flags)
+target_link_libraries(vcomp_math PRIVATE vcomp_util)
+
+file(GLOB vcomp_enc_src "src/encode/*.c")
+add_library(vcomp_enc ${vcomp_enc_src})
+target_include_directories(vcomp_enc PRIVATE "src/encoder")
+target_link_libraries(vcomp_enc PRIVATE vcomp_flags)
+target_link_libraries(vcomp_enc PRIVATE vcomp_math vcomp_util)
 # file(GLOB vcomp_dec_src "src/decode/*.c")
 
 if(VCOMP_ENABLE_TESTS)
