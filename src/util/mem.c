@@ -58,7 +58,7 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
         debug("mpool extend list");
         c1_mpool__node_t **lnk = prev ? &prev->next : (c1_mpool__node_t **)&p->root_;
         *lnk = (c1_mpool__node_t *)malloc(sizeof(c1_mpool__node_t) + (int)p->sz * p->nb + c1_mpool__msksz(p));
-        // todo: assert malloc
+        assert_fatal(*lnk);
         n = *lnk;
         n->next = NULL;
         memset(n->data + (int)p->sz * p->nb, 0, c1_mpool__msksz(p));

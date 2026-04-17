@@ -18,7 +18,11 @@ extern "C" {
 
 // #define C1_ENC_SB_SZ 64
 // #define C1_ENCODE_REF_FRAMES_CNT 16
-// #define C1_ENCODE_MB_MAX_PART_CNT 4
+// #define C1_ENCODE_MAX_PART_CNT 4
+#define C1_ENC_INTRA_CAND_CNT 2
+#define C1_ENC_INTER_CAND_CNT 2
+
+// --- prediction modes ---
 
 enum {
     C1_PRED_INTER,
@@ -43,27 +47,54 @@ enum {
     C1_PRED_PAETH,
 };
 typedef uint8_t C1_PRED_MODE;
+
+// --- frame type ---
+
 enum {
     C1_FRAME_I,
     C1_FRAME_P,
 };
 typedef uint8_t C1_FRAME_TYPE;
 
-/** encoder context
- */
+// --- motion vector ---
+
+struct c1enc_mv_s {
+    int16_t y, x;
+};
+typedef struct c1enc_mv_s c1enc_mv_t;
+
+// --- rate-distortion statistics ---
+
+#define C1_RD_RATE_BIT (1<<0)
+#define C1_RD_DIS_BIT (1<<1)
+#define C1_RD_SSE_BIT (1<<2)
+#define C1_RD_SAD_BIT (1<<3)
+#define C1_RD_FIT_BIT (1<<4)
+typedef struct{
+    uint8_t mask;
+    int32_t r,d;
+    int32_t sse,sad;
+    float fitness;
+}c1enc_rdstat_t;
+
+// --- encoder context ---
+
 struct c1enc_ctx_s {
     c1_pixbuf_t ref_frames[16];
     uint8_t avail_ref_cnt;
     struct {
     } profile;
 };
+
+// -- frame, super block, partition and block ---
+
+/** the current frame to encode.
+    pixel format c3i16 yuv
+*/
 struct c1enc_frame_s {
-    /** the current frame to encode.
-        pixel format c3i16 yuv
-    */
-    struct {
-        c1_pixbuf_t pix;
-    } buf;
+    // buffer
+    c1_pixbuf_t pix;
+
     struct {
         C1_FRAME_TYPE frame_type;
 
@@ -82,65 +113,88 @@ typedef struct c1enc_frame_s c1enc_frame_t;
  super block is a coding unit of 64x64 pixels
 */
 struct c1enc_super_block_s {
-    struct {
-        c1_pixbuf_t pix;
-    } buf;
+    // buffer
+    c1_pixbuf_t pix;
+    int32_t qcoef_buf[64 * 64 * 3];
+
     struct {
         uint8_t force_all_intra;
         uint8_t is_all_intra;
 
         int8_t q_index_delta;
     } inf;
-    struct c1enc_macro_block_s *root_mb;
+    struct c1enc_partition_s *root;
 };
 typedef struct c1enc_super_block_s c1enc_super_block_t;
 
-struct c1enc_macro_block_s {
-    struct {
-        c1_pixbuf_t pix;
-    } buf;
-    struct {
-        uint8_t is_all_intra;
-        uint8_t is_cb;
-        C1_TX_2D_SZ size;
-
-        union {
-            struct {
-                C1_PRED_TYPE pred_type;
-                C1_PRED_TYPE pred_mode;
-                union {
-                    struct {
-                    } inter_inf;
-                    struct {
-                        uint8_t use_cfl;
-                    } intra_inf;
-                };
-
-                C1_TX_2D_SZ tx_size;
-                uint8_t tx_cnt;
-                struct c1enc_tx_block_s *tx_blocks;
-            } cb_inf;
-            struct c1enc_macro_block_s *parts[4];
-        };
-    } inf;
-    struct {
-        int32_t sse;
-        // ...
-    } est;
+struct c1enc_plane_s {
+    // buffers
+    c1_pixbuf_t pix; // pixel of c1i16
+    int16_t *diff;   // residual
+    int32_t *coef;
+    int32_t *qcoef;
+    int32_t *dqcoef;
 };
-typedef struct c1enc_macro_block_s c1enc_macro_block_t;
-struct c1enc_tx_block_s {
-    struct {
-        c1_pixbuf_t pix;
-    } buf;
-    struct {
-        C1_TX_2D_SZ tx_size;
-        C1_TX_2D_TYPE tx_type;
-    } inf;
-    struct {
-        int32_t sse;
-    } est;
+typedef struct c1enc_plane_s c1enc_plane_t;
+
+// pred/tx mode info and candidates
+typedef struct {
+    uint8_t use_cfl; // induced from uv mode
+    C1_PRED_MODE mode_y;
+    C1_PRED_MODE mode_uv;
+    int16_t cfl_alpha;
+} c1enc_mi_intra_t;
+typedef struct {
+    C1_PRED_MODE mode;
+    int8_t ref_frame;
+    c1enc_mv_t mv, mvd;
+} c1enc_mi_inter_t;
+
+struct c1enc_block_s {
+    C1_PRED_TYPE pred_type;
+    C1_TX_2D_SZ size;
+
+    
+    // now assume tx_largest, tx size is the block size
+    // uint8_t wid_per_tx, hgt_per_tx;
+    C1_TX_2D_SZ tx_size;
+    C1_TX_2D_TYPE tx_type;
+
+    uint8_t intra_cand_cnt;
+    uint8_t inter_cand_cnt;
+
+    union {
+        // intra mode info
+        c1enc_mi_intra_t mi_intra;
+        // inter mode info
+        c1enc_mi_inter_t mi_inter;
+    };
+
+    c1enc_plane_t p[3]; // planes
+
+    c1enc_mi_intra_t intra_cands[C1_ENC_INTRA_CAND_CNT];
+    c1enc_mi_inter_t inter_cands[C1_ENC_INTER_CAND_CNT];
+    c1enc_rdstat_t intra_cand_stats[C1_ENC_INTRA_CAND_CNT];
+    c1enc_rdstat_t inter_cand_stats[C1_ENC_INTER_CAND_CNT];
 };
+typedef struct c1enc_block_s c1enc_block_t;
+
+struct c1enc_partition_s {
+    // buffer
+    c1_pixbuf_t pix;
+
+    // attr
+    uint8_t is_all_intra; //?
+    uint8_t is_partition;
+    C1_TX_2D_SZ size;
+
+    union {
+        c1enc_block_t *b;
+        struct c1enc_partition_s *parts[4];
+    };
+    c1enc_rdstat_t stats;
+};
+typedef struct c1enc_partition_s c1enc_partition_t;
 
 #ifdef __cplusplus
 }

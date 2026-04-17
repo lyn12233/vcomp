@@ -78,6 +78,15 @@ struct c1tx_option_s {
 };
 typedef struct c1tx_option_s c1tx_option_t;
 
+static uint8_t c1tx_sz2wid(C1_TX_2D_SZ sz) {
+    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
+    return lookup[sz];
+}
+static uint8_t c1tx_sz2hgt(C1_TX_2D_SZ sz) {
+    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
+    return lookup[sz];
+}
+
 int c1tx_extend_option(c1tx_option_t *opt);
 
 // round utils

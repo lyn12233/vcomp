@@ -8,11 +8,13 @@ add_executable(test_pixbuf test_pixbuf.c)
 target_link_libraries(test_pixbuf PRIVATE vcomp_util_asan)
 add_executable(test_tx test_tx.c)
 target_link_libraries(test_tx PRIVATE vcomp_math_asan)
+add_executable(test_blockd test_block_data.c)
+target_link_libraries(test_blockd PRIVATE vcomp_enc_asan)
 
 foreach(targ test_ent)
     target_link_libraries(${targ} PRIVATE vcomp_flags)
 endforeach()
-foreach(targ test_ent2 test_pixbuf test_tx)
+foreach(targ test_ent2 test_pixbuf test_tx test_blockd)
     target_link_libraries(${targ} PRIVATE vcomp_flags_asan)
     add_custom_command(TARGET ${targ} PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASAN_DLL}" "${CMAKE_CURRENT_BINARY_DIR}"

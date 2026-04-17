@@ -121,8 +121,26 @@ int c1_pixbuf_paste(c1_pixbuf_t *trg, const c1_pixbuf_t *src, int y, int x) {
     return 0;
 }
 
-c1_pixbuf_t c1_pixbuf_dup(const c1_pixbuf_t *pix) {
+c1_pixbuf_t c1_pixbuf_dupview(const c1_pixbuf_t *pix) {
     c1_pixbuf_t res = *pix;
+    if (res.buf)
+        c1_sptr_incref(&res.buf);
+    return res;
+}
+
+c1_pixbuf_t c1_pixbuf_fromchnl(const c1_pixbuf_t *pix, int chnl) {
+    assert_fatal(chnl >= 0 && chnl <= 3);
+    assert_fatal(pix->type == C1_PIXBUF_C3I8 || pix->type == C1_PIXBUF_C3I16 || //
+                 pix->type == C1_PIXBUF_C3I32 || pix->type == C1_PIXBUF_C3F32);
+    c1_pixbuf_t res = {pix->type - 1,
+                       pix->h_inv,
+                       pix->w_inv,
+                       pix->h,
+                       pix->w, //
+                       pix->h_stride * 3,
+                       pix->w_stride * 3,
+                       pix->offs * 3 + chnl,
+                       pix->buf};
     if (res.buf)
         c1_sptr_incref(&res.buf);
     return res;

@@ -1,5 +1,6 @@
 #ifndef C1_ENCODE_ENCODER_H
 #define C1_ENCODE_ENCODER_H
+#include "math/transform.h"
 #include "types.h"
 #include "util/pixbuf.h"
 #ifdef __cplusplus
@@ -11,7 +12,7 @@ extern "C" {
 #include <stdio.h>
 
 // to init a frame, assign {0} then update it.
-/** update a frame struct
+/** update or init a frame struct
  behaviors:
   - create a new expanded pixbuf align to super block boundary, filled with ?
   - re-alloc related super blocks and update them
@@ -23,7 +24,19 @@ int c1enc_frame_clear(c1enc_frame_t *frm);
 int c1enc_frame_validate(const c1enc_frame_t *frame);
 void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind);
 
-int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int x, int y);
+/** update or init a super block
+ a superblock is coding unit in a frame of size 64x64. 
+ it may include quantization index and globally allocated bufs 
+ behavior:
+  - update pixbuf of sb
+  - take into frame type info (i,p-frame)
+  - unset q index delta?
+  - case no root partition info, construct it
+ @param sb super block to update
+ @param frm frame info for sb
+ @param y row offset in frame
+*/
+int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int y, int x);
 int c1enc_sb_clear(c1enc_super_block_t *sb);
 int c1enc_sb_validate(const c1enc_super_block_t *sb);
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind);
@@ -32,9 +45,15 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_mb_update(c1enc_macro_block_t *mb, const c1enc_super_block_t *sb);
-int c1enc_mb_validate(const c1enc_macro_block_t *mb);
-void c1enc_mb_repr(FILE *f, const c1enc_macro_block_t *mb, int ind);
+int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t*pix,C1_TX_2D_SZ size);
+int c1enc_partition_clear(c1enc_partition_t* part);
+int c1enc_partition_validate(const c1enc_partition_t *part);
+void c1enc_partition_repr(FILE *f, const c1enc_partition_t *part, int ind);
+
+int c1enc_block_update(c1enc_block_t*b, const c1_pixbuf_t*pix, C1_TX_2D_SZ size);
+int c1enc_block_clear(c1enc_block_t*b);
+int c1enc_block_validate(c1enc_block_t*b);
+void c1enc_block_repr(FILE *f, const c1enc_block_t*b, int ind);
 
 #ifdef __cplusplus
 }

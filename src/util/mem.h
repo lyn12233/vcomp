@@ -11,7 +11,7 @@ extern "C" {
 
 // memory pool
 struct c1_mpool_s {
-    const uint8_t sz; // elem_sz
+    const uint16_t sz; // elem_sz
     const uint8_t nb;
     void *root_;
 };
