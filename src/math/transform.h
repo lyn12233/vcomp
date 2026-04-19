@@ -16,27 +16,32 @@ extern "C" {
 */
 
 #define C1_TX1_SIZE_CNT 4 // 8,16,32,64
-#define C1_TX2_SIZE_CNT 4 // 4x4 ... 64x64
+#define C1_TX2_SIZE_CNT 4 // 8x8 ... 64x64
 #define C1_TX1_TYPE_CNT 7
 #define C1_TX2_TYPE_CNT 4
 
-// 1d tx function type
+/** 1d tx function type.
+ input and output are non identical buffers storing compact data.
+ potential opt purposes.
+ caller to these functions should prepare them, possibly on stack.
+ */
 typedef void (*c1tx_func_t)(const int32_t *input, int32_t *output, int8_t cos_bit);
 
-// overridable func array and global lookup tables
+// overridable func array for 1d tx and global lookup tables
+// potential opt is at 1d tx
 
 extern c1tx_func_t c1tx_func_array[C1_TX1_TYPE_CNT];
 extern c1tx_func_t c1tx_inv_func_array[C1_TX1_TYPE_CNT];
 
 extern const int8_t c1tx_cos_bit_col[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
 extern const int8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
-extern const int8_t c1tx_inv_cos_bit;
+static const int8_t c1tx_inv_cos_bit = 12;
 extern const int8_t c1tx_shift_ls[C1_TX2_SIZE_CNT][3];
 extern const int8_t c1tx_inv_shift_ls[C1_TX2_SIZE_CNT][2];
 
 extern const int32_t c1tx_cospi_arr_data[4][64];
 extern const int32_t c1tx_sinpi_arr_data[4][5];
-extern const int c1tx_cos_bit_min; // 10
+static const int c1tx_cos_bit_min = 10;
 
 // transform option
 

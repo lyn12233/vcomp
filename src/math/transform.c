@@ -83,7 +83,6 @@ const int8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT] = {
     {0, 0, 12, 0},
     {0, 0, 0, 10},
 };
-const int8_t c1tx_inv_cos_bit = 12;
 
 // how much to shift bits left at the intervals of col/row tx
 // suffices 2**total_shift_left = 2/sqrt(nbcol*nbrow), the dct coef
@@ -129,8 +128,6 @@ const int32_t c1tx_cospi_arr_data[4][64] = {
 };
 const int32_t c1tx_sinpi_arr_data[4][5];
 // clang-format on
-
-const int c1tx_cos_bit_min = 10;
 
 int c1tx_extend_option(c1tx_option_t *opt) {
     uint8_t col_idx = c1tx__get_col_sz_idx(opt->txsize);
