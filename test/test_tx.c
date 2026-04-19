@@ -11,7 +11,7 @@ int main() {
     info("origin matrix:");
     c1_pixbuf_repr(stdout, &p);
 
-    c1tx_option_t opt = {TX2SZ_8_8, TX2TYPE_DCT_DCT};
+    c1tx_option_t opt = {C1_SZ_8_8, TX2TYPE_DCT_DCT};
     int32_t buf[64];
     c1tx_txfm2d(&p, &p2, &opt, buf);
     info("after h-dct:");

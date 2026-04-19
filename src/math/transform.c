@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 // get column 1d tranxform type, silent invalid combinations, like 64x64 ident
-static C1_TX_1D_TYPE c1tx__get_col_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
+static C1_TX_1D_TYPE c1tx__get_col_type(C1_2D_SZ sz, C1_TX_2D_TYPE tp) {
     static const C1_TX_1D_TYPE lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
         {TX1TYPE_DCT_8, TX1TYPE_IDEN_8, TX1TYPE_DCT_8, TX1TYPE_IDEN_8},
         {TX1TYPE_DCT_16, TX1TYPE_IDEN_16, TX1TYPE_DCT_16, TX1TYPE_IDEN_16},
@@ -17,7 +17,7 @@ static C1_TX_1D_TYPE c1tx__get_col_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
 }
 
 // get row 1d tx type, see above
-static C1_TX_1D_TYPE c1tx__get_row_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
+static C1_TX_1D_TYPE c1tx__get_row_type(C1_2D_SZ sz, C1_TX_2D_TYPE tp) {
     static const C1_TX_1D_TYPE lookup[C1_TX2_SIZE_CNT][C1_TX2_TYPE_CNT] = {
         {TX1TYPE_DCT_8, TX1TYPE_DCT_8, TX1TYPE_IDEN_8, TX1TYPE_IDEN_8},
         {TX1TYPE_DCT_16, TX1TYPE_DCT_16, TX1TYPE_IDEN_16, TX1TYPE_IDEN_16},
@@ -27,19 +27,19 @@ static C1_TX_1D_TYPE c1tx__get_row_type(C1_TX_2D_SZ sz, C1_TX_2D_TYPE tp) {
     return lookup[sz][tp];
 }
 
-static uint8_t c1tx__get_col_sz(C1_TX_2D_SZ sz) {
+static uint8_t c1tx__get_col_sz(C1_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
     return lookup[sz];
 }
-static uint8_t c1tx__get_row_sz(C1_TX_2D_SZ sz) {
+static uint8_t c1tx__get_row_sz(C1_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
     return lookup[sz];
 }
-static uint8_t c1tx__get_col_sz_idx(C1_TX_2D_SZ sz) {
+static uint8_t c1tx__get_col_sz_idx(C1_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {0, 1, 2, 3};
     return lookup[sz];
 }
-static uint8_t c1tx__get_row_sz_idx(C1_TX_2D_SZ sz) {
+static uint8_t c1tx__get_row_sz_idx(C1_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {0, 1, 2, 3};
     return lookup[sz];
 }

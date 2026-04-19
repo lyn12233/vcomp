@@ -25,8 +25,8 @@ int c1enc_frame_validate(const c1enc_frame_t *frame);
 void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind);
 
 /** update or init a super block
- a superblock is coding unit in a frame of size 64x64. 
- it may include quantization index and globally allocated bufs 
+ a superblock is coding unit in a frame of size 64x64.
+ it may include quantization index and globally allocated bufs
  behavior:
   - update pixbuf of sb
   - take into frame type info (i,p-frame)
@@ -45,15 +45,15 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t*pix,C1_TX_2D_SZ size);
-int c1enc_partition_clear(c1enc_partition_t* part);
+int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t *pix, C1_2D_SZ size);
+int c1enc_partition_clear(c1enc_partition_t *part);
 int c1enc_partition_validate(const c1enc_partition_t *part);
 void c1enc_partition_repr(FILE *f, const c1enc_partition_t *part, int ind);
 
-int c1enc_block_update(c1enc_block_t*b, const c1_pixbuf_t*pix, C1_TX_2D_SZ size);
-int c1enc_block_clear(c1enc_block_t*b);
-int c1enc_block_validate(c1enc_block_t*b);
-void c1enc_block_repr(FILE *f, const c1enc_block_t*b, int ind);
+int c1enc_block_update(c1enc_block_t *b, const c1_pixbuf_t *pix, C1_2D_SZ size);
+int c1enc_block_clear(c1enc_block_t *b);
+int c1enc_block_validate(c1enc_block_t *b);
+void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);
 
 #ifdef __cplusplus
 }

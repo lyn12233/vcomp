@@ -11,7 +11,6 @@ key definitions:
 extern "C" {
 #endif
 
-#include "src/math/transform.h"
 #include "src/util/pixbuf.h"
 
 #include <stdint.h>
@@ -21,6 +20,16 @@ extern "C" {
 // #define C1_ENCODE_MAX_PART_CNT 4
 #define C1_ENC_INTRA_CAND_CNT 2
 #define C1_ENC_INTER_CAND_CNT 2
+
+// -- size enums ---
+
+enum{
+    C1_SZ_8_8,
+    C1_SZ_16_16,
+    C1_SZ_32_32,
+    C1_SZ_64_64,
+};
+typedef uint8_t C1_2D_SZ;
 
 // --- prediction modes ---
 
@@ -47,6 +56,32 @@ enum {
     C1_PRED_PAETH,
 };
 typedef uint8_t C1_PRED_MODE;
+
+// --- transform sizes and types ---
+
+enum {
+    TX1TYPE_DCT_8,
+    TX1TYPE_DCT_16,
+    TX1TYPE_DCT_32,
+    TX1TYPE_DCT_64,
+    TX1TYPE_IDEN_8,
+    TX1TYPE_IDEN_16,
+    TX1TYPE_IDEN_32,
+    // TXTYPE_ADST_8,
+    // TXTYPE_ADST_16,
+};
+typedef uint8_t C1_TX_1D_TYPE;
+
+enum {
+    TX2TYPE_DCT_DCT,
+    TX2TYPE_H_DCT,
+    TX2TYPE_V_DCT,
+    TX2TYPE_IDEN,
+    // TXTYPE_ADST_ADST,
+    // TXTYPE_H_ADST,
+    // TXTYPE_V_ADST,
+};
+typedef uint8_t C1_TX_2D_TYPE;
 
 // --- frame type ---
 
@@ -152,12 +187,12 @@ typedef struct {
 
 struct c1enc_block_s {
     C1_PRED_TYPE pred_type;
-    C1_TX_2D_SZ size;
+    C1_2D_SZ size;
 
     
     // now assume tx_largest, tx size is the block size
     // uint8_t wid_per_tx, hgt_per_tx;
-    C1_TX_2D_SZ tx_size;
+    C1_2D_SZ tx_size;
     C1_TX_2D_TYPE tx_type;
 
     uint8_t intra_cand_cnt;
@@ -186,7 +221,7 @@ struct c1enc_partition_s {
     // attr
     uint8_t is_all_intra; //?
     uint8_t is_partition;
-    C1_TX_2D_SZ size;
+    C1_2D_SZ size;
 
     union {
         c1enc_block_t *b;
@@ -195,6 +230,18 @@ struct c1enc_partition_s {
     c1enc_rdstat_t stats;
 };
 typedef struct c1enc_partition_s c1enc_partition_t;
+
+
+// --- helper funcs ---
+
+static uint8_t c1_sz2wid(C1_2D_SZ sz) {
+    static const uint8_t lookup[4] = {8, 16, 32, 64};
+    return lookup[sz];
+}
+static uint8_t c1_sz2hgt(C1_2D_SZ sz) {
+    static const uint8_t lookup[4] = {8, 16, 32, 64};
+    return lookup[sz];
+}
 
 #ifdef __cplusplus
 }

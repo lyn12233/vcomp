@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 
+#include "src/encode/types.h"
 #include "src/util/pixbuf.h"
 
 #include <stdint.h>
@@ -21,6 +22,9 @@ extern "C" {
 
 // 1d tx function type
 typedef void (*c1tx_func_t)(const int32_t *input, int32_t *output, int8_t cos_bit);
+
+// overridable func array and global lookup tables
+
 extern c1tx_func_t c1tx_func_array[C1_TX1_TYPE_CNT];
 extern c1tx_func_t c1tx_inv_func_array[C1_TX1_TYPE_CNT];
 
@@ -34,40 +38,10 @@ extern const int32_t c1tx_cospi_arr_data[4][64];
 extern const int32_t c1tx_sinpi_arr_data[4][5];
 extern const int c1tx_cos_bit_min; // 10
 
-enum {
-    TX2SZ_8_8,
-    TX2SZ_16_16,
-    TX2SZ_32_32,
-    TX2SZ_64_64,
-};
-typedef uint8_t C1_TX_2D_SZ;
-
-enum {
-    TX1TYPE_DCT_8,
-    TX1TYPE_DCT_16,
-    TX1TYPE_DCT_32,
-    TX1TYPE_DCT_64,
-    TX1TYPE_IDEN_8,
-    TX1TYPE_IDEN_16,
-    TX1TYPE_IDEN_32,
-    // TXTYPE_ADST_8,
-    // TXTYPE_ADST_16,
-};
-typedef uint8_t C1_TX_1D_TYPE;
-
-enum {
-    TX2TYPE_DCT_DCT,
-    TX2TYPE_H_DCT,
-    TX2TYPE_V_DCT,
-    TX2TYPE_IDEN,
-    // TXTYPE_ADST_ADST,
-    // TXTYPE_H_ADST,
-    // TXTYPE_V_ADST,
-};
-typedef uint8_t C1_TX_2D_TYPE;
+// transform option
 
 struct c1tx_option_s {
-    C1_TX_2D_SZ txsize;
+    C1_2D_SZ txsize;
     C1_TX_2D_TYPE txtype;
     // these options are determined from the former ones.
     // they are used for both forward and inverse transform
@@ -77,15 +51,6 @@ struct c1tx_option_s {
     uint8_t flip_col, flip_row;
 };
 typedef struct c1tx_option_s c1tx_option_t;
-
-static uint8_t c1tx_sz2wid(C1_TX_2D_SZ sz) {
-    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
-    return lookup[sz];
-}
-static uint8_t c1tx_sz2hgt(C1_TX_2D_SZ sz) {
-    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
-    return lookup[sz];
-}
 
 int c1tx_extend_option(c1tx_option_t *opt);
 

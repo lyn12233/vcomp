@@ -127,7 +127,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int y, in
         assert_fatal(sb->root);
         memset(sb->root, 0, sizeof(c1enc_partition_t));
     }
-    c1enc_partition_update(sb->root, &sb->pix, TX2SZ_64_64);
+    c1enc_partition_update(sb->root, &sb->pix, C1_SZ_64_64);
     return 0;
 }
 int c1enc_sb_clear(c1enc_super_block_t *sb) {
@@ -169,7 +169,7 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t *pix, C1_TX_2D_SZ size) {
+int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t *pix, C1_2D_SZ size) {
     // 0. case size change or init, uninit
     if (part->pix.h != pix->h || part->pix.w != pix->w) {
         c1enc_partition_clear(part);
@@ -182,7 +182,7 @@ int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t *pix, C1_T
     part->pix = c1_pixbuf_dupview(pix);
     // 3. case uninit, init a 64x64...8x8 partition by default
     if (part->is_partition && part->parts[0] == NULL || !part->is_partition && part->b == NULL) {
-        if (size == TX2SZ_8_8) {
+        if (size == C1_SZ_8_8) {
             // terminal size, init block
             part->is_partition = 0;
             part->b = c1_mpool_alloc(&c1enc__blk_pool);
@@ -190,9 +190,9 @@ int c1enc_partition_update(c1enc_partition_t *part, const c1_pixbuf_t *pix, C1_T
             c1enc_block_update(part->b, &part->pix, size);
         } else {
             // partition by 4: tl,tr,bl,br
-            assert_fatal(size <= TX2SZ_64_64 && "otherwise unimpl");
-            uint8_t new_wid = c1tx_sz2wid(size) / 2;
-            C1_TX_2D_SZ new_sz = size - 1;
+            assert_fatal(size <= C1_SZ_64_64 && "otherwise unimpl");
+            uint8_t new_wid = c1_sz2wid(size) / 2;
+            C1_2D_SZ new_sz = size - 1;
             c1_pixbuf_t new_pix;
             int slices[4][2][3] = {
                 {{0, new_wid, 1}, {0, new_wid, 1}},
@@ -231,7 +231,7 @@ int c1enc_partition_clear(c1enc_partition_t *part) {
     return 0;
 }
 int c1enc_partition_validate(const c1enc_partition_t *part) {
-    if (part->pix.w != c1tx_sz2wid(part->size)) {
+    if (part->pix.w != c1_sz2wid(part->size)) {
         warning2("mismatch partition size: %d!=%d", part->pix.w, part->size);
         return -1;
     }
@@ -261,7 +261,7 @@ int c1enc_partition_validate(const c1enc_partition_t *part) {
 }
 void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Partition [%dx%d, %s] (\r\n", c1tx_sz2wid(p->size), c1tx_sz2wid(p->size),
+    fprintf(f, "Partition [%dx%d, %s] (\r\n", c1_sz2wid(p->size), c1_sz2wid(p->size),
             p->is_partition ? "mid" : "end");
     if (p->is_partition) {
         for (int i = 0; i < 4; i++) {
@@ -274,7 +274,7 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
     fprintf(f, ")\r\n");
 }
 
-int c1enc_block_update(c1enc_block_t *b, const c1_pixbuf_t *pix, C1_TX_2D_SZ size) {
+int c1enc_block_update(c1enc_block_t *b, const c1_pixbuf_t *pix, C1_2D_SZ size) {
     if (b->size != size) {
         c1enc_block_clear(b);
     }
@@ -300,7 +300,7 @@ int c1enc_block_validate(c1enc_block_t *b) {
 }
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Block [%dx%d] (\r\n", c1tx_sz2wid(b->size), c1tx_sz2wid(b->size));
+    fprintf(f, "Block [%dx%d] (\r\n", c1_sz2wid(b->size), c1_sz2wid(b->size));
     for (int ci = 0; ci < 3; ci++) {
         c1__print_ind(f, ind + 4);
         fprintf(f, "Plane [%c] (\r\n", "yuv"[ci]);
