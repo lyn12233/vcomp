@@ -23,7 +23,7 @@ extern "C" {
 
 // -- size enums ---
 
-enum{
+enum {
     C1_SZ_8_8,
     C1_SZ_16_16,
     C1_SZ_32_32,
@@ -100,17 +100,17 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 
 // --- rate-distortion statistics ---
 
-#define C1_RD_RATE_BIT (1<<0)
-#define C1_RD_DIS_BIT (1<<1)
-#define C1_RD_SSE_BIT (1<<2)
-#define C1_RD_SAD_BIT (1<<3)
-#define C1_RD_FIT_BIT (1<<4)
-typedef struct{
+#define C1_RD_RATE_BIT (1 << 0)
+#define C1_RD_DIS_BIT (1 << 1)
+#define C1_RD_SSE_BIT (1 << 2)
+#define C1_RD_SAD_BIT (1 << 3)
+#define C1_RD_FIT_BIT (1 << 4)
+typedef struct {
     uint8_t mask;
-    int32_t r,d;
-    int32_t sse,sad;
+    int32_t r, d;
+    int32_t sse, sad;
     float fitness;
-}c1enc_rdstat_t;
+} c1enc_rdstat_t;
 
 // --- encoder context ---
 
@@ -149,26 +149,26 @@ typedef struct c1enc_frame_s c1enc_frame_t;
 */
 struct c1enc_super_block_s {
     // buffer
-    c1_pixbuf_t pix;
+    int16_t diff_buf[64 * 64 * 3];
     int32_t qcoef_buf[64 * 64 * 3];
 
-    struct {
-        uint8_t force_all_intra;
-        uint8_t is_all_intra;
+    uint16_t sb_y, sb_x;     // super block is at y row and x col in frame
+    uint8_t force_all_intra; // ?
+    uint8_t is_all_intra;    // ?
 
-        int8_t q_index_delta;
-    } inf;
+    int8_t q_index_delta;
+
     struct c1enc_partition_s *root;
 };
 typedef struct c1enc_super_block_s c1enc_super_block_t;
 
 struct c1enc_plane_s {
-    // buffers
-    c1_pixbuf_t pix; // pixel of c1i16
-    int16_t *diff;   // residual
-    int32_t *coef;
-    int32_t *qcoef;
-    int32_t *dqcoef;
+    // persistence buffers since no compound pred+tx search.
+    // pred is measured by sad and tx is measured by ??
+    int16_t *diff;   // residual owned by sb. represents the best pred and used by tx
+    int32_t *coef;   // coef is the tx result. represents best tx
+    int32_t *qcoef;  // ??
+    int32_t *dqcoef; // dequantized coef. used for both encoding and reconstruction
 };
 typedef struct c1enc_plane_s c1enc_plane_t;
 
@@ -189,7 +189,8 @@ struct c1enc_block_s {
     C1_PRED_TYPE pred_type;
     C1_2D_SZ size;
 
-    
+    uint16_t sb_y, sb_x; // sb index in frame
+    uint8_t yoff, xoff;  // offset in super block
     // now assume tx_largest, tx size is the block size
     // uint8_t wid_per_tx, hgt_per_tx;
     C1_2D_SZ tx_size;
@@ -216,7 +217,6 @@ typedef struct c1enc_block_s c1enc_block_t;
 
 struct c1enc_partition_s {
     // buffer
-    c1_pixbuf_t pix;
 
     // attr
     uint8_t is_all_intra; //?
@@ -230,7 +230,6 @@ struct c1enc_partition_s {
     c1enc_rdstat_t stats;
 };
 typedef struct c1enc_partition_s c1enc_partition_t;
-
 
 // --- helper funcs ---
 
