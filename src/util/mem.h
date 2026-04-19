@@ -22,6 +22,7 @@ typedef struct c1_mpool_s c1_mpool_t;
 void *c1_mpool_alloc(c1_mpool_t *p);
 // free a buffer in the pool
 int c1_mpool_dealloc(c1_mpool_t *p, void *buf);
+int c1_mpool_dbgcnt(const c1_mpool_t *p);
 
 // default mpools with size 8, .., 64
 

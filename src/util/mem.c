@@ -45,6 +45,16 @@ static int c1_mpool__node_isempty(const c1_mpool_t *p, c1_mpool__node_t *n) {
     return 1;
 }
 
+static int c1_mpool__dbgncnt(const c1_mpool_t *p, const c1_mpool__node_t *n) {
+    const uint8_t *msk = n->data + (int)p->sz * p->nb;
+    int cnt = 0;
+    for (int i = 0; i < p->nb; i++) {
+        if (msk[i / 8] & (1 << (i%8)))
+            cnt++;
+    }
+    return cnt;
+}
+
 void *c1_mpool_alloc(c1_mpool_t *p) {
     c1_mpool__node_t *n = (c1_mpool__node_t *)(p->root_);
     c1_mpool__node_t *prev = NULL;
@@ -106,6 +116,16 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
     }
 
     return 0;
+}
+
+int c1_mpool_dbgcnt(const c1_mpool_t *p) {
+    const c1_mpool__node_t *n = p->root_;
+    int cnt = 0;
+    while (n) {
+        cnt += c1_mpool__dbgncnt(p, n);
+        n = n->next;
+    }
+    return cnt;
 }
 
 #define C1_SPTR_POOLNB 64
