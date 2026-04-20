@@ -20,6 +20,7 @@ extern "C" {
 // #define C1_ENCODE_MAX_PART_CNT 4
 #define C1_ENC_INTRA_CAND_CNT 2
 #define C1_ENC_INTER_CAND_CNT 2
+#define C1_SIZE_CNT 4 // 8x8 ... 64x64
 
 // -- size enums ---
 
@@ -47,12 +48,12 @@ enum {
     C1_PRED_DC,
     C1_PRED_H,
     C1_PRED_V,
-    C1_PRED_D45,
-    C1_PRED_D135,
-    C1_PRED_D37,
-    C1_PRED_D113,
-    C1_PRED_D157,
-    C1_PRED_D203,
+    C1_PRED_D45,  // 45-z1 225-z3 both likely
+    C1_PRED_D135, // z2
+    C1_PRED_D67,  // z1 left
+    C1_PRED_D113, // z2
+    C1_PRED_D157, // z2
+    C1_PRED_D203, // z3 right
     C1_PRED_PAETH,
 };
 typedef uint8_t C1_PRED_MODE;
@@ -241,6 +242,10 @@ static uint8_t c1_sz2hgt(C1_2D_SZ sz) {
     static const uint8_t lookup[4] = {8, 16, 32, 64};
     return lookup[sz];
 }
+
+#define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
+#define C1_ROUND_MID(val, div) (((val) + ((div) >> 1)) / (div))
+#define C1_ROUND_BITS(val, bits) (((val) + (1 << ((bits) - 1))) >> (bits))
 
 #ifdef __cplusplus
 }
