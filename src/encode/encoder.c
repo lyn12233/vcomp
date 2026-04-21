@@ -64,7 +64,7 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     }
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++)
-            c1enc_sb_update(frm->super_blocks + i, frm, i, j);
+            c1enc_sb_update(frm->super_blocks + bw * i + j, frm, i, j);
     }
 
     return 0;
@@ -268,7 +268,7 @@ int c1enc_block_update(c1enc_block_t *b, C1_2D_SZ size, uint8_t y, uint8_t x, ui
     if (b->size != size) {
         c1enc_block_clear(b);
     }
-    
+
     // reset volatile attrs
     b->sb_y = sb_y, b->sb_x = sb_x;
     b->yoff = y, b->xoff = x;
@@ -288,7 +288,7 @@ int c1enc_block_validate(c1enc_block_t *b) {
 }
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Block [%dx%d] (\r\n", c1_sz2wid(b->size), c1_sz2wid(b->size));
+    fprintf(f, "Block [%dx%d, (+%d,+%d)] (\r\n", c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff);
     for (int ci = 0; ci < 3; ci++) {
         c1__print_ind(f, ind + 4);
         fprintf(f, "Plane [%c] (\r\n", "yuv"[ci]);

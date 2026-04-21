@@ -15,6 +15,7 @@ extern "C" {
  the param input are original pixels and output are prediction.
  they are compact int16_t single color channel data gathered by callers.
  for some predictor types, input, above and left are placeholders and may not be used.
+ either above or left should point to offset of 1 of a array of at least h+w values
 */
 typedef void (*c1pd_intra_func_t)(const int16_t *input, int16_t *output, //
                                   const int16_t *above, const int16_t *left);
