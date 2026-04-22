@@ -8,6 +8,7 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 // memory pool
 struct c1_mpool_s {
@@ -26,15 +27,22 @@ int c1_mpool_dbgcnt(const c1_mpool_t *p);
 
 // default mpools with size 1, .., 256 (bytes)
 extern c1_mpool_t c1_mpool_defs[9];
-// fast default alloc, suppose size is 2**n and within range, no checking.
-static void *c1_mpool_alloc_def(uint16_t size) {
+// fast default alloc, suppose size is 2**n and within range, no checking,
+// but bigger 2**n downgrades to malloc.
+static void *c1_mpool_alloc_def(uint32_t size) {
+    if (size > 256)
+        return malloc(size);
     int i = 0;
     while (size >>= 1)
         i++;
     return c1_mpool_alloc(c1_mpool_defs + i);
 }
 // fast default dealloc.
-static int c1_mpool_dealloc_def(uint16_t size, void *buf) {
+static int c1_mpool_dealloc_def(uint32_t size, void *buf) {
+    if (size > 256) {
+        free(buf);
+        return 0;
+    }
     int i = 0;
     while (size >>= 1)
         i++;

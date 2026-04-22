@@ -1,5 +1,6 @@
 #include "transform.h"
 #include "src/util/log.h"
+#include "util/mem.h"
 #include "util/pixbuf.h"
 
 #include <limits.h>
@@ -131,8 +132,8 @@ int c1tx_extend_option(c1tx_option_t *opt) {
     opt->cos_bit_row = c1tx_cos_bit_row[row_idx][col_idx];
     opt->txtype_col = c1tx__get_col_type(opt->txsize, opt->txtype);
     opt->txtype_row = c1tx__get_row_type(opt->txsize, opt->txtype);
-    opt->txsize_col = c1_sz2wid(opt->txsize);
-    opt->txsize_row = c1_sz2hgt(opt->txsize);
+    opt->txsize_col = c1_sz2hgt(opt->txsize);
+    opt->txsize_row = c1_sz2wid(opt->txsize);
     opt->flip_col = 0;
     opt->flip_row = 0;
     return 0;
@@ -163,9 +164,7 @@ static int32_t c1tx__half_btf(int32_t w0, int32_t in0, int32_t w1, int32_t in1, 
     return (int32_t)(result >> bit);
 }
 
-int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf) {
-    assert_fatal(input->type == C1_PIXBUF_C1I16);
-    assert_fatal(output->type == C1_PIXBUF_C1I32);
+int c1tx_txfm2d(const int16_t *input, int32_t *output, c1tx_option_t *opt) {
 
     c1tx_extend_option(opt);
     const c1tx_func_t col_func = c1tx_func_array[opt->txtype_col];
@@ -175,8 +174,10 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
     // requires temporary arrays of max(tx_size_row/col) int32's
     // int32_t temp_in[64], temp_out[64];
     const int temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
+    const int buf_size = opt->txsize_col * opt->txsize_row * sizeof(int32_t);
     int32_t *temp_in = c1_mpool_alloc_def(temp_size);
     int32_t *temp_out = c1_mpool_alloc_def(temp_size);
+    int32_t *buf = c1_mpool_alloc_def(buf_size);
 
     // column transform
     for (uint8_t col = 0; col < opt->txsize_col; col++) {
@@ -184,7 +185,7 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
             fatal2("unimpl");
         } else {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
-                temp_in[row] = *c1_pixbuf_geti16(input, row, col);
+                temp_in[row] = input[row * opt->txsize_col + col];
             }
         }
         c1tx_round_shift_array(temp_in, opt->txsize_row, -shift[0]);
@@ -203,7 +204,7 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
         row_func(buf + row * opt->txsize_col, temp_out, opt->cos_bit_row);
         c1tx_round_shift_array(temp_out, opt->txsize_col, -shift[2]);
         for (uint8_t col = 0; col < opt->txsize_col; col++) {
-            *c1_pixbuf_geti32(output, row, col) = temp_out[col];
+            output[row * opt->txsize_col + col] = temp_out[col];
         }
         // todo: if rect is (a,2a) or (2a,a) mult sqrt 2
     }
@@ -211,12 +212,11 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
 dtor:
     c1_mpool_dealloc_def(temp_size, temp_in);
     c1_mpool_dealloc_def(temp_size, temp_out);
+    c1_mpool_dealloc_def(buf_size, buf);
 
     return 0;
 }
-int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf) {
-    assert_fatal(input->type == C1_PIXBUF_C1I32);
-    assert_fatal(output->type == C1_PIXBUF_C1I16);
+int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt) {
 
     c1tx_extend_option(opt);
     const c1tx_func_t col_func = c1tx_inv_func_array[opt->txtype_col];
@@ -226,8 +226,10 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
     // requires temporary arrays of max(tx_size_row/col) int32's
     // int32_t temp_in[64], temp_out[64];
     const int temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
+    const int buf_size = opt->txsize_col * opt->txsize_row * sizeof(int32_t);
     int32_t *temp_in = c1_mpool_alloc_def(temp_size);
     int32_t *temp_out = c1_mpool_alloc_def(temp_size);
+    int32_t *buf = c1_mpool_alloc_def(buf_size);
 
     // row transform
     for (uint8_t row = 0; row < opt->txsize_row; row++) {
@@ -235,7 +237,7 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
         // todo: if rect is (a,2a) or (2a,a) mult sqrt 2
         // rect is not considered currently
         for (uint8_t col = 0; col < opt->txsize_col; col++) {
-            temp_in[col] = *c1_pixbuf_geti32(input, row, col);
+            temp_in[col] = input[row * opt->txsize_col + col];
         }
         // todo: clamp
         row_func(temp_in, buf_ptr, opt->cos_bit_row);
@@ -258,7 +260,7 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
         } else {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
                 // suppose bitdepth is 8bit, clamps to 255
-                int16_t *out = c1_pixbuf_geti16(output, row, col);
+                int16_t *out = output + row * opt->txsize_col + col;
                 *out = c1tx__clamp64((int64_t)*out + temp_out[row], 0, 255);
             }
         } // </flip?>
@@ -267,6 +269,7 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
 dtor:
     c1_mpool_dealloc_def(temp_size, temp_in);
     c1_mpool_dealloc_def(temp_size, temp_out);
+    c1_mpool_dealloc_def(buf_size, buf);
 
     return 0;
 }

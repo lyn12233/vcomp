@@ -52,7 +52,7 @@ struct c1tx_option_s {
     // they are used for both forward and inverse transform
     uint8_t cos_bit_col, cos_bit_row;
     uint8_t txtype_col, txtype_row;
-    uint8_t txsize_col, txsize_row; // col/row size in pixels
+    uint8_t txsize_col, txsize_row; // col/row size in pixels, e.g. col size is height
     uint8_t flip_col, flip_row;     // whether use flip, currently unused
 };
 typedef struct c1tx_option_s c1tx_option_t;
@@ -64,19 +64,16 @@ int32_t c1tx_round_shift(int64_t value, int bit);
 void c1tx_round_shift_array(int32_t *arr, int size, int bit);
 
 /** perform 2D forward transform based on option struct
- note: (1) input and output can be the same
- @param input input pixel buffer, color format c1i16
- @param output output pixel buffer, should be at least the size of input, c1i32
- @param buf caller should provide temporary storage of middle result.
- should be a compact space of int32_t[txh*txw]. this provides an option not to alloc on stack
+ @param input input pixel buffer, c1i16, compact
+ @param output output pixel buffer, c1i32, compact
  @param opt transform option, now only needs 2d transform type and size. other fields are extended
 */
-int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf);
+int c1tx_txfm2d(const int16_t *input, int32_t *output, c1tx_option_t *opt);
 /** perform 2D inerse transform
- @param input color format c1i32
- @param output color format c1i16
+ @param input c1i32
+ @param output c1i16
  */
-int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf);
+int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt);
 
 #ifdef __cplusplus
 }
