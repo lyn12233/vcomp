@@ -49,7 +49,7 @@ static int c1_mpool__dbgncnt(const c1_mpool_t *p, const c1_mpool__node_t *n) {
     const uint8_t *msk = n->data + (int)p->sz * p->nb;
     int cnt = 0;
     for (int i = 0; i < p->nb; i++) {
-        if (msk[i / 8] & (1 << (i%8)))
+        if (msk[i / 8] & (1 << (i % 8)))
             cnt++;
     }
     return cnt;
@@ -110,9 +110,13 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
     if (c1_mpool__node_isempty(p, n)) {
         c1_mpool__node_t **lnk = prev ? &prev->next : (c1_mpool__node_t **)&p->root_;
         c1_mpool__node_t *next = n->next;
-        *lnk = next;
-        free(n);
-        debug("mpool free node %p", n);
+        if (next != NULL) {
+            *lnk = next;
+            free(n);
+            debug("mpool free node %p", n);
+        } else {
+            // nop, do not free the last node constantly
+        }
     }
 
     return 0;

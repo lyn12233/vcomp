@@ -128,7 +128,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y,
         assert_fatal(sb->root);
         *sb->root = (c1enc_partition_t){0};
     }
-    c1enc_partition_update(sb->root, C1_SZ_64_64, sb_y, sb_x, 0, 0);
+    c1enc_partition_update(sb->root, sb, C1_SZ_64_64, sb_y, sb_x, 0, 0, 0);
     return 0;
 }
 int c1enc_sb_clear(c1enc_super_block_t *sb) {
@@ -165,7 +165,9 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, C1_2D_SZ size, uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x) {
+int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                           uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
+                           uint16_t buf_offs) {
     // 0. case size change
     // note init means {0}, which may or may not effect
     if (part->size != size) {
@@ -174,17 +176,20 @@ int c1enc_partition_update(c1enc_partition_t *part, C1_2D_SZ size, uint8_t y, ui
     // 1. assign volatile attrs
     part->size = size;
     part->is_all_intra = 0;
+    part->y = y, part->x = x, part->sb_y = sb_y, part->sb_x = sb_x;
+    part->buf_offs = buf_offs;
 
     // 3. case init, init a 64x64...8x8 partition by default
     if (part->is_partition /*wont met but for robustness*/ && part->parts[0] == NULL || //
         !part->is_partition && part->b == NULL) {
-        assert_fatal(size <= C1_SZ_64_64 && "otherwise unimpl");
+        assert_fatal(size <= C1_SZ_64_64 && "unimpl size");
+
         if (size == C1_SZ_8_8) {
             // terminal size, init block
             part->is_partition = 0;
             part->b = c1_mpool_alloc(&c1enc__blk_pool);
             *part->b = (c1enc_block_t){0};
-            c1enc_block_update(part->b, size, y, x, sb_y, sb_x);
+            c1enc_block_update(part->b, sb, size, y, x, sb_y, sb_x, buf_offs);
         } else {
             // partition by 4: tl,tr,bl,br
             uint8_t new_hgt = c1_sz2hgt(size) / 2;
@@ -202,7 +207,9 @@ int c1enc_partition_update(c1enc_partition_t *part, C1_2D_SZ size, uint8_t y, ui
                 part->parts[i] = c1_mpool_alloc(&c1enc__part_pool);
                 assert_fatal(part->parts[i]);
                 *part->parts[i] = (c1enc_partition_t){0};
-                c1enc_partition_update(part->parts[i], new_sz, y + offs[i][0], x + offs[i][1], sb_y, sb_x);
+                c1enc_partition_update(part->parts[i], sb, new_sz,                 //
+                                       y + offs[i][0], x + offs[i][1], sb_y, sb_x, //
+                                       buf_offs + i * new_hgt * new_wid);
             }
         }
     }
@@ -264,7 +271,9 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
     fprintf(f, ")\r\n");
 }
 
-int c1enc_block_update(c1enc_block_t *b, C1_2D_SZ size, uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x) {
+int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                       uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
+                       uint16_t buf_offs) {
     if (b->size != size) {
         c1enc_block_clear(b);
     }
@@ -276,6 +285,12 @@ int c1enc_block_update(c1enc_block_t *b, C1_2D_SZ size, uint8_t y, uint8_t x, ui
     b->tx_size = size; // ?
     b->intra_cand_cnt = 0;
     b->inter_cand_cnt = 0;
+    // assign buf in sb for planes
+    for (int ci = 0; ci < 3; ci++) {
+        b->p[ci].diff = sb->diff_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
+        b->p[ci].coef = sb->coef_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
+        b->p[ci].qcoef = sb->qcoef_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
+    }
     return 0;
 }
 int c1enc_block_clear(c1enc_block_t *b) {

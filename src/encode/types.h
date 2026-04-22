@@ -11,7 +11,7 @@ key definitions:
 extern "C" {
 #endif
 
-#include "src/util/pixbuf.h"
+#include "util/pixbuf.h"
 
 #include <stdint.h>
 
@@ -151,6 +151,7 @@ typedef struct c1enc_frame_s c1enc_frame_t;
 struct c1enc_super_block_s {
     // buffer
     int16_t diff_buf[64 * 64 * 3];
+    int32_t coef_buf[64 * 64 * 3];
     int32_t qcoef_buf[64 * 64 * 3];
 
     uint16_t sb_y, sb_x;     // super block is at y row and x col in frame
@@ -166,10 +167,9 @@ typedef struct c1enc_super_block_s c1enc_super_block_t;
 struct c1enc_plane_s {
     // persistence buffers since no compound pred+tx search.
     // pred is measured by sad and tx is measured by ??
-    int16_t *diff;   // residual owned by sb. represents the best pred and used by tx
-    int32_t *coef;   // coef is the tx result. represents best tx
-    int32_t *qcoef;  // ??
-    int32_t *dqcoef; // dequantized coef. used for both encoding and reconstruction
+    int16_t *diff;  // residual owned by sb. represents the best pred and used by tx
+    int32_t *coef;  // coef is the tx result. represents best tx, used for qi refinement
+    int32_t *qcoef; // quantized coef. used for both encoding and reconstruction
 };
 typedef struct c1enc_plane_s c1enc_plane_t;
 
@@ -190,8 +190,13 @@ struct c1enc_block_s {
     C1_PRED_TYPE pred_type;
     C1_2D_SZ size;
 
+    // attrs necessary to collect above and left pixels
+
     uint16_t sb_y, sb_x; // sb index in frame
     uint8_t yoff, xoff;  // offset in super block
+
+    // attrs for search result
+
     // now assume tx_largest, tx size is the block size
     // uint8_t wid_per_tx, hgt_per_tx;
     C1_2D_SZ tx_size;
@@ -223,11 +228,14 @@ struct c1enc_partition_s {
     uint8_t is_all_intra; //?
     uint8_t is_partition;
     C1_2D_SZ size;
+    // attr neccessary to re-create a block
+    uint8_t y, x;
+    uint16_t sb_y, sb_x;
+    uint16_t buf_offs; // offset in buf provided by super block, per int16_t*3
 
-    union {
-        c1enc_block_t *b;
-        struct c1enc_partition_s *parts[4];
-    };
+    c1enc_block_t *b;
+    struct c1enc_partition_s *parts[4];
+
     c1enc_rdstat_t stats;
 };
 typedef struct c1enc_partition_s c1enc_partition_t;

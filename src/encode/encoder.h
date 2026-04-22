@@ -1,13 +1,13 @@
 #ifndef C1_ENCODE_ENCODER_H
 #define C1_ENCODE_ENCODER_H
-#include "math/transform.h"
-#include "types.h"
-#include "util/pixbuf.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "src/encode/types.h"
+#include "types.h"
+
+#include "math/transform.h"
+#include "util/pixbuf.h"
 
 #include <stdio.h>
 
@@ -45,12 +45,16 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, C1_2D_SZ size,uint8_t y, uint8_t x, uint16_t sb_y,uint16_t sb_x);
+int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                           uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                    //
+                           uint16_t buf_offs);
 int c1enc_partition_clear(c1enc_partition_t *part);
 int c1enc_partition_validate(const c1enc_partition_t *part);
 void c1enc_partition_repr(FILE *f, const c1enc_partition_t *part, int ind);
 
-int c1enc_block_update(c1enc_block_t *b, C1_2D_SZ size,uint8_t y,uint8_t x,uint16_t sb_y,uint16_t sb_x);
+int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                       uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,             //
+                       uint16_t buf_offs);
 int c1enc_block_clear(c1enc_block_t *b);
 int c1enc_block_validate(c1enc_block_t *b);
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);

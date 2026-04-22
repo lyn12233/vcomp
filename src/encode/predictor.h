@@ -1,10 +1,12 @@
 #ifndef C1_ENCODE_INTRA_PRED_H
 #define C1_ENCODE_INTRA_PRED_H
-#include "types.h"
-#include "util/pixbuf.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "types.h"
+
+#include "util/pixbuf.h"
 
 #include <stdint.h>
 
