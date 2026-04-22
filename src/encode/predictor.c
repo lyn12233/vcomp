@@ -1,6 +1,7 @@
 #include "predictor.h"
 #include "src/util/log.h"
 #include "types.h"
+#include "util/mem.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -262,3 +263,82 @@ c1pd_intra_func_t c1pd_dc_preds[2][2][C1_SIZE_CNT] = {
         {c1pd__dc_8_8, c1pd__dc_16_16, c1pd__dc_32_32, c1pd__dc_64_64},
     },
 };
+
+static const int16_t c1pd__128_border[128] = {
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+};
+
+static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
+                               const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+    // 0. abbrv attrs from b
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int border_x = (int)b->sb_x * 16 + b->xoff - 1;
+    const int border_y = (int)b->sb_y * 16 + b->yoff - 1;
+    // 1. prepare above and left
+    uint8_t avail_above, avail_left; // indices for dc pred
+    const int16_t *above;
+    const int16_t *left;
+    int16_t *above_tmp = NULL, *left_tmp = NULL; // for cv qualifirer issues
+    if (border_y < 0) {
+        avail_above = 0;
+        above = c1pd__128_border + 1;
+    } else {
+        avail_above = 1;
+        const int delta = border_x; // delta>=-1
+        above_tmp = c1_mpool_alloc_def(bh + bw);
+        // border at least bh+bw offs -1, ozwis fill 128 at inval pos
+        if (delta < 0)
+            above_tmp[0] = 128;
+        for (int j = delta < 0 ? -delta : 0; j < bh + bw; j++) {
+            if (j + delta > pix->w) {
+                for (; j < bh + bw; j++)
+                    above_tmp[j] = 128;
+                break;
+            }
+            above_tmp[j] = *c1_pixbuf_geti16c(pix, border_y, j + delta);
+        }
+        above = above_tmp + 1;
+    }
+    if (border_x < 0) {
+        avail_left = 0;
+        left = c1pd__128_border + 1;
+    } else {
+        avail_left = 1;
+        const int delta = border_y;
+        left_tmp = c1_mpool_alloc_def(bh + bw);
+        if (delta < 0)
+            left_tmp[0] = 128;
+        for (int i = delta < 0 ? -delta : 0; i < bh + bw; i++) {
+            if (i + delta > pix->h) {
+                for (; i < bh + bw; i++)
+                    left_tmp[i] = 128;
+                break;
+            }
+            left_tmp[i] = *c1_pixbuf_geti16c(pix, i + border_y, border_x);
+        }
+        left = left_tmp + 1;
+    }
+
+    // conduct pred
+
+dtor:
+    if (above_tmp) {
+        c1_mpool_dealloc_def(bh + bw, above_tmp);
+    }
+    if (left_tmp) {
+        c1_mpool_dealloc_def(bh + bw, left_tmp);
+    }
+}
+
+static int c1pd__predict_inter(const c1enc_block_t *b, int16_t *output, //
+                               const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+    //
+}
+
+int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
+                 const c1_pixbuf_t *pix, const c1pd_option_t *opt) {}

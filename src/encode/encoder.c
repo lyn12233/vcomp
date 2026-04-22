@@ -25,7 +25,7 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // expected height and width
     int eh = C1_ROUND_UP(pix->h, 64) * 64;
     int ew = C1_ROUND_UP(pix->w, 64) * 64;
-    int bh = eh / 64, bw = ew / 64;
+    int hb = eh / 64, wb = ew / 64;
 
     if (eh != frm->inf.hgt_per_sb || ew != frm->inf.wid_per_sb) {
         // frame size (after rounding) has changed.
@@ -36,9 +36,9 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         // 2. new sb. malloc and init with {0}
         if (frm->super_blocks)
             free(frm->super_blocks);
-        frm->super_blocks = malloc(sizeof(c1enc_super_block_t) * bh * bw);
+        frm->super_blocks = malloc(sizeof(c1enc_super_block_t) * hb * wb);
         assert_fatal(frm->super_blocks);
-        memset(frm->super_blocks, 0, sizeof(c1enc_super_block_t) * bh * bw);
+        memset(frm->super_blocks, 0, sizeof(c1enc_super_block_t) * hb * wb);
         assert_fatal(frm->super_blocks);
 
         // 3. clear pix
@@ -51,8 +51,8 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->inf.frame_type = C1_FRAME_I;
         frm->inf.hgt = eh;
         frm->inf.wid = ew;
-        frm->inf.hgt_per_sb = bh;
-        frm->inf.wid_per_sb = bw;
+        frm->inf.hgt_per_sb = hb;
+        frm->inf.wid_per_sb = wb;
     }
 
     // paste pix to frame
@@ -61,9 +61,9 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->pix = c1_pixbuf_create(C1_PIXBUF_C3I16, eh, ew);
         c1_pixbuf_paste(&frm->pix, pix, 0, 0);
     }
-    for (int i = 0; i < bh; i++) {
-        for (int j = 0; j < bw; j++)
-            c1enc_sb_update(frm->super_blocks + bw * i + j, frm, i, j);
+    for (int i = 0; i < hb; i++) {
+        for (int j = 0; j < wb; j++)
+            c1enc_sb_update(frm->super_blocks + wb * i + j, frm, i, j);
     }
 
     return 0;

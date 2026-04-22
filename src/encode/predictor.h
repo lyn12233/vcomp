@@ -36,20 +36,22 @@ extern c1pd_intra_func_t c1pd_dc_recons[2][2][C1_SIZE_CNT];
 typedef struct {
     C1_2D_SZ size;
     C1_PRED_MODE mode;
-    // needs some frame context!
     uint8_t ci; // color idx: yuv
-    uint16_t yoffs, xoffs;
-    const c1_pixbuf_t *frmpix; // all frame pixels possibly in frame_t, c3i16
+    uint8_t use_cfl;
+    c1enc_mv_t mv;
 } c1pd_option_t;
 
 // some utils to init pred option?
 // todo re-do things below
 /** perform either intra or inter prediction based on option struct.
  this is a mid layer between encoder and custom predictor impls.
- @param[in] input c1i16
- @param[out] output c1i16
+ @param[in] b block containing block offset info
+ @param[out] output compact space to store pred result, at the size of b. in most cases is b->p[ci].diff, but in case
+ ...
+ @param[in] pix case intra, pixbuf of current frame; case inter, pixbuf of reference frame
+ @param[in] opt predict option
 */
-int c1pd_predict(c1_pixbuf_t *input, c1_pixbuf_t *output, c1pd_option_t *opt);
+int c1pd_predict(const c1enc_block_t *b, int16_t *output, const c1_pixbuf_t *pix, const c1pd_option_t *opt);
 /** perform inter/intra reconstruction
  */
 int c1pd_reconstruct(c1_pixbuf_t *input, c1_pixbuf_t *output, c1pd_option_t *opt);
