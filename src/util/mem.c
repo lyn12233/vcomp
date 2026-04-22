@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+c1_mpool_t c1_mpool_defs[9] = {
+    {1, 220, NULL}, {2, 110, NULL}, {4, 120, NULL},  {8, 60, NULL},  {16, 30, NULL},
+    {32, 15, NULL}, {64, 15, NULL}, {128, 15, NULL}, {256, 7, NULL},
+};
+
 typedef struct c1_mpool__node_s {
     struct c1_mpool__node_s *next;
     /* for 2**nblog2 element, data[] first contains memories to be allocated, then

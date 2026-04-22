@@ -24,7 +24,22 @@ void *c1_mpool_alloc(c1_mpool_t *p);
 int c1_mpool_dealloc(c1_mpool_t *p, void *buf);
 int c1_mpool_dbgcnt(const c1_mpool_t *p);
 
-// default mpools with size 8, .., 64
+// default mpools with size 1, .., 256 (bytes)
+extern c1_mpool_t c1_mpool_defs[9];
+// fast default alloc, suppose size is 2**n and within range, no checking.
+static void *c1_mpool_alloc_def(uint16_t size) {
+    int i = 0;
+    while (size >>= 1)
+        i++;
+    return c1_mpool_alloc(c1_mpool_defs + i);
+}
+// fast default dealloc.
+static int c1_mpool_dealloc_def(uint16_t size, void *buf) {
+    int i = 0;
+    while (size >>= 1)
+        i++;
+    return c1_mpool_dealloc(c1_mpool_defs + i, buf);
+}
 
 // shared_ptr
 struct c1_sptr_s {

@@ -46,14 +46,14 @@ static const int c1tx_cos_bit_min = 10;
 // transform option
 
 struct c1tx_option_s {
-    C1_2D_SZ txsize;
-    C1_TX_2D_TYPE txtype;
+    C1_2D_SZ txsize;      // 2d size enum
+    C1_TX_2D_TYPE txtype; // tranform type
     // these options are determined from the former ones.
     // they are used for both forward and inverse transform
     uint8_t cos_bit_col, cos_bit_row;
     uint8_t txtype_col, txtype_row;
-    uint8_t txsize_col, txsize_row;
-    uint8_t flip_col, flip_row;
+    uint8_t txsize_col, txsize_row; // col/row size in pixels
+    uint8_t flip_col, flip_row;     // whether use flip, currently unused
 };
 typedef struct c1tx_option_s c1tx_option_t;
 

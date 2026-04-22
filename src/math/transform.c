@@ -27,14 +27,6 @@ static C1_TX_1D_TYPE c1tx__get_row_type(C1_2D_SZ sz, C1_TX_2D_TYPE tp) {
     return lookup[sz][tp];
 }
 
-static uint8_t c1tx__get_col_sz(C1_2D_SZ sz) {
-    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
-    return lookup[sz];
-}
-static uint8_t c1tx__get_row_sz(C1_2D_SZ sz) {
-    static const uint8_t lookup[C1_TX2_SIZE_CNT] = {8, 16, 32, 64};
-    return lookup[sz];
-}
 static uint8_t c1tx__get_col_sz_idx(C1_2D_SZ sz) {
     static const uint8_t lookup[C1_TX2_SIZE_CNT] = {0, 1, 2, 3};
     return lookup[sz];
@@ -47,6 +39,9 @@ static int64_t c1tx__clamp64(int64_t x, int64_t lb, int64_t ub) {
     x = x < lb ? lb : x;
     x = x > ub ? ub : x;
     return x;
+}
+static int c1__max(int a, int b) {
+    return a > b ? a : b;
 }
 
 static void c1tx__dct_8(const int32_t *input, int32_t *output, int8_t cos_bit);
@@ -136,8 +131,8 @@ int c1tx_extend_option(c1tx_option_t *opt) {
     opt->cos_bit_row = c1tx_cos_bit_row[row_idx][col_idx];
     opt->txtype_col = c1tx__get_col_type(opt->txsize, opt->txtype);
     opt->txtype_row = c1tx__get_row_type(opt->txsize, opt->txtype);
-    opt->txsize_col = c1tx__get_col_sz(opt->txsize);
-    opt->txsize_row = c1tx__get_row_sz(opt->txsize);
+    opt->txsize_col = c1_sz2wid(opt->txsize);
+    opt->txsize_row = c1_sz2hgt(opt->txsize);
     opt->flip_col = 0;
     opt->flip_row = 0;
     return 0;
@@ -177,7 +172,11 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
     const c1tx_func_t row_func = c1tx_func_array[opt->txtype_row];
     const int8_t *shift = c1tx_shift_ls[opt->txsize];
 
-    int32_t temp_in[64], temp_out[64];
+    // requires temporary arrays of max(tx_size_row/col) int32's
+    // int32_t temp_in[64], temp_out[64];
+    const int temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
+    int32_t *temp_in = c1_mpool_alloc_def(temp_size);
+    int32_t *temp_out = c1_mpool_alloc_def(temp_size);
 
     // column transform
     for (uint8_t col = 0; col < opt->txsize_col; col++) {
@@ -208,6 +207,11 @@ int c1tx_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int
         }
         // todo: if rect is (a,2a) or (2a,a) mult sqrt 2
     }
+
+dtor:
+    c1_mpool_dealloc_def(temp_size, temp_in);
+    c1_mpool_dealloc_def(temp_size, temp_out);
+
     return 0;
 }
 int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt, int32_t *buf) {
@@ -219,12 +223,17 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
     const c1tx_func_t row_func = c1tx_inv_func_array[opt->txtype_row];
     const int8_t *shift = c1tx_inv_shift_ls[opt->txsize];
 
-    int32_t temp_in[64], temp_out[64];
+    // requires temporary arrays of max(tx_size_row/col) int32's
+    // int32_t temp_in[64], temp_out[64];
+    const int temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
+    int32_t *temp_in = c1_mpool_alloc_def(temp_size);
+    int32_t *temp_out = c1_mpool_alloc_def(temp_size);
 
     // row transform
     for (uint8_t row = 0; row < opt->txsize_row; row++) {
         int32_t *buf_ptr = buf + row * (opt->txsize_col);
         // todo: if rect is (a,2a) or (2a,a) mult sqrt 2
+        // rect is not considered currently
         for (uint8_t col = 0; col < opt->txsize_col; col++) {
             temp_in[col] = *c1_pixbuf_geti32(input, row, col);
         }
@@ -254,33 +263,38 @@ int c1tx_inv_txfm2d(c1_pixbuf_t *input, c1_pixbuf_t *output, c1tx_option_t *opt,
             }
         } // </flip?>
     } // </col_tx>
+
+dtor:
+    c1_mpool_dealloc_def(temp_size, temp_in);
+    c1_mpool_dealloc_def(temp_size, temp_out);
+
     return 0;
 }
 
 #include "src/math/ref/av1_fwd_txfm1d.c"
-#define mkfunc(x, y)                                          \
+#define C1_MAKE_TX_FUNC(x, y)                                 \
     static void x(const int32_t *i, int32_t *o, int8_t bit) { \
         y(i, o, bit, NULL);                                   \
     }
-// mkfunc(c1tx__dct_8, c1tx__av1_fdct8);
+// C1_MAKE_TX_FUNC(c1tx__dct_8, c1tx__av1_fdct8);
 static void c1tx__dct_8(const int32_t *i, int32_t *o, int8_t cos_bit) {
     // info("input is (%d, %d, %d, %d, %d, %d, %d, %d)",i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7]);
     c1tx__av1_fdct8(i, o, cos_bit, NULL);
     // info("output is (%d, %d, %d, %d, %d, %d, %d, %d)",o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7]);
 }
-mkfunc(c1tx__dct_16, c1tx__av1_fdct16);
-mkfunc(c1tx__dct_32, c1tx__av1_fdct32);
-mkfunc(c1tx__dct_64, c1tx__av1_fdct64);
-mkfunc(c1tx__iden_8, c1tx__av1_iden8);
-mkfunc(c1tx__iden_16, c1tx__av1_iden16);
-mkfunc(c1tx__iden_32, c1tx__av1_iden32);
+C1_MAKE_TX_FUNC(c1tx__dct_16, c1tx__av1_fdct16);
+C1_MAKE_TX_FUNC(c1tx__dct_32, c1tx__av1_fdct32);
+C1_MAKE_TX_FUNC(c1tx__dct_64, c1tx__av1_fdct64);
+C1_MAKE_TX_FUNC(c1tx__iden_8, c1tx__av1_iden8);
+C1_MAKE_TX_FUNC(c1tx__iden_16, c1tx__av1_iden16);
+C1_MAKE_TX_FUNC(c1tx__iden_32, c1tx__av1_iden32);
 #include "src/math/ref/av1_inv_txfm1d.c"
-// mkfunc(c1tx__idct_8, c1tx__av1_idct8);
+// C1_MAKE_TX_FUNC(c1tx__idct_8, c1tx__av1_idct8);
 static void c1tx__idct_8(const int32_t *i, int32_t *o, int8_t cos_bit) {
     // info("input is (%d, %d, %d, %d, %d, %d, %d, %d)",i[0],i[1],i[2],i[3],i[4],i[5],i[6],i[7]);
     c1tx__av1_idct8(i, o, cos_bit, NULL);
     // info("output is (%d, %d, %d, %d, %d, %d, %d, %d)",o[0],o[1],o[2],o[3],o[4],o[5],o[6],o[7]);
 }
-mkfunc(c1tx__idct_16, c1tx__av1_idct16);
-mkfunc(c1tx__idct_32, c1tx__av1_idct32);
-mkfunc(c1tx__idct_64, c1tx__av1_idct64);
+C1_MAKE_TX_FUNC(c1tx__idct_16, c1tx__av1_idct16);
+C1_MAKE_TX_FUNC(c1tx__idct_32, c1tx__av1_idct32);
+C1_MAKE_TX_FUNC(c1tx__idct_64, c1tx__av1_idct64);

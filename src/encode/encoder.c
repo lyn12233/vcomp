@@ -1,21 +1,20 @@
-#include "src/encode/encoder.h"
 #include "encoder.h"
-#include "math/transform.h"
-#include "src/util/log.h"
-#include "src/util/mem.h"
 #include "types.h"
+
+#include "math/transform.h"
+#include "util/log.h"
+#include "util/mem.h"
 #include "util/pixbuf.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#define C1__ROUND_UP(val, div) (((val) + (div) - 1) / (div))
-#define C1_ENC_PART_POOLNB 64
-#define C1_ENC_BLK_POOLNB 16
+#define C1_ENC_PART_POOLNB 50
+#define C1_ENC_BLK_POOLNB 18
 
 // this is the pool context to store all macro blocks
-static c1_mpool_t c1enc__part_pool = {C1__ROUND_UP(sizeof(c1enc_partition_t), 8) * 8, C1_ENC_PART_POOLNB, NULL};
-static c1_mpool_t c1enc__blk_pool = {C1__ROUND_UP(sizeof(c1enc_block_t), 8) * 8, C1_ENC_BLK_POOLNB, NULL};
+static c1_mpool_t c1enc__part_pool = {C1_ROUND_UP(sizeof(c1enc_partition_t), 8) * 8, C1_ENC_PART_POOLNB, NULL};
+static c1_mpool_t c1enc__blk_pool = {C1_ROUND_UP(sizeof(c1enc_block_t), 8) * 8, C1_ENC_BLK_POOLNB, NULL};
 
 static void c1__print_ind(FILE *f, int ind) {
     for (int i = 0; i < ind; i += 4)
@@ -24,8 +23,8 @@ static void c1__print_ind(FILE *f, int ind) {
 
 int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // expected height and width
-    int eh = C1__ROUND_UP(pix->h, 64) * 64;
-    int ew = C1__ROUND_UP(pix->w, 64) * 64;
+    int eh = C1_ROUND_UP(pix->h, 64) * 64;
+    int ew = C1_ROUND_UP(pix->w, 64) * 64;
     int bh = eh / 64, bw = ew / 64;
 
     if (eh != frm->inf.hgt_per_sb || ew != frm->inf.wid_per_sb) {
