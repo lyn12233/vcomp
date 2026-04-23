@@ -178,7 +178,7 @@ typedef struct {
     uint8_t use_cfl; // induced from uv mode
     C1_PRED_MODE mode_y;
     C1_PRED_MODE mode_uv;
-    int8_t cfl_alpha; // -16 ~ 16 (/64)
+    int8_t cfl_alpha_u, cfl_alpha_v; // -16 ~ 16 (/64)
 } c1enc_mi_intra_t;
 typedef struct {
     C1_PRED_MODE mode;
@@ -214,10 +214,10 @@ struct c1enc_block_s {
 
     c1enc_plane_t p[3]; // planes
 
-    c1enc_mi_intra_t intra_cands[C1_ENC_INTRA_CAND_CNT];
-    c1enc_mi_inter_t inter_cands[C1_ENC_INTER_CAND_CNT];
-    c1enc_rdstat_t intra_cand_stats[C1_ENC_INTRA_CAND_CNT];
-    c1enc_rdstat_t inter_cand_stats[C1_ENC_INTER_CAND_CNT];
+    c1enc_mi_intra_t intra_cands[C1_ENC_INTRA_CAND_CNT + 1]; // the extra slot is to ease bobble sort
+    c1enc_mi_inter_t inter_cands[C1_ENC_INTER_CAND_CNT + 1];
+    c1enc_rdstat_t intra_cand_stats[C1_ENC_INTRA_CAND_CNT + 1];
+    c1enc_rdstat_t inter_cand_stats[C1_ENC_INTER_CAND_CNT + 1];
 };
 typedef struct c1enc_block_s c1enc_block_t;
 
@@ -255,6 +255,9 @@ static int c1_pred_is_inter(C1_PRED_MODE mode) {
 }
 static int c1_pred_is_intra(C1_PRED_MODE mode) {
     return mode >= C1_PRED_DC && mode <= C1_PRED_PAETH;
+}
+static int16_t c1_abs_dif_i16(int16_t a, int16_t b) {
+    return a > b ? a - b : b - a;
 }
 
 #define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
