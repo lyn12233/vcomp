@@ -45,13 +45,18 @@ typedef struct {
 // todo re-do things below
 /** perform either intra or inter prediction based on option struct.
  this is a mid layer between encoder and custom predictor impls.
+ (1) no subsampling is considered
  @param[in] b block containing block offset info
  @param[out] output compact space to store pred result, at the size of b. in most cases is b->p[ci].diff, but in case
  ...
- @param[in] pix case intra, pixbuf of current frame; case inter, pixbuf of reference frame
+ @param[in] pix format c3i16; case intra, pixbuf of current frame; case inter, pixbuf of reference frame
  @param[in] opt predict option
+ @param[out] cfl_alpha for option if ci>0 and use_cfl, mode is neglected and this pointer is required ozrwis unused.
+ cfl_alpha is represented in int8_t range (-16/64,16/64)
 */
-int c1pd_predict(const c1enc_block_t *b, int16_t *output, const c1_pixbuf_t *pix, const c1pd_option_t *opt);
+int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
+                 const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t*cfl);
+
 /** perform inter/intra reconstruction
  */
 int c1pd_reconstruct(c1_pixbuf_t *input, c1_pixbuf_t *output, c1pd_option_t *opt);

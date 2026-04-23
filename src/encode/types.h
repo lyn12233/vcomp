@@ -178,7 +178,7 @@ typedef struct {
     uint8_t use_cfl; // induced from uv mode
     C1_PRED_MODE mode_y;
     C1_PRED_MODE mode_uv;
-    int16_t cfl_alpha;
+    int8_t cfl_alpha; // -16 ~ 16 (/64)
 } c1enc_mi_intra_t;
 typedef struct {
     C1_PRED_MODE mode;

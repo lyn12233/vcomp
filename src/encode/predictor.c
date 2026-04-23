@@ -1,7 +1,9 @@
 #include "predictor.h"
-#include "src/util/log.h"
 #include "types.h"
+
+#include "util/log.h"
 #include "util/mem.h"
+#include "util/pixbuf.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -378,16 +380,83 @@ static int c1pd__predict_inter(const c1enc_block_t *b, int16_t *output, //
     return 0;
 }
 
+int c1pd_predict_cfl(const c1enc_block_t *b, int16_t *output, //
+                     const c1_pixbuf_t *pix, const c1_pixbuf_t *pix_ref, int8_t *cfl_alpha) {
+    // 1. calc cfl_alpha
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+
+    // regr y = alpha*x+dc
+    int32_t sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (int i = 0; i < bh; i++) {
+        for (int j = 0; j < bw; j++) {
+            // x is luma and y is chroma. 16 bit sufficient
+            int16_t x = *c1_pixbuf_geti16c(pix_ref, by + i, bx + j);
+            int16_t y = *c1_pixbuf_geti16c(pix, by + i, bx + j);
+            sx += x, sy += y, sxx += x * x, sxy += x * y;
+        }
+    }
+    // calculate clamp(divident/divisor, -16, 16)
+    // int32_t is enought: n*sxx < 64*64*255*255 < 2**28
+    int32_t divident = bh * bw * sxy - sx * sy;
+    int32_t divisor = (bh * bw * sxx - sx * sx) / 64; // alpha is scaled up in 64
+    if (divisor < 0)
+        divisor = -divisor, divident = -divident;
+    divident += divisor / 2; // rounding
+    // speed up division?
+    if (divisor == 0) {
+        *cfl_alpha = divident < 0 ? -16 : 16;
+    } else if (divident < -16 * divisor)
+        *cfl_alpha = -16;
+    else if (divident > 16 * divisor) {
+        *cfl_alpha = 16;
+    } else {
+        *cfl_alpha = c1pd__clamp(divident / divisor, -16, 16);
+    }
+
+    // 2. derive implicit dc
+    int16_t dc = 0, ndc = 0;
+    if (bx > 0) {
+        for (int i = 0; i < bh && by + i < pix->h; i++) {
+            dc += *c1_pixbuf_geti16c(pix, by + i, bx - 1), ndc++;
+        }
+    }
+    if (by > 0) {
+        for (int j = 0; j < bw && bx + j < pix->w; j++) {
+            dc += *c1_pixbuf_geti16c(pix, by - 1, bx + j), ndc++;
+        }
+    }
+    dc = ndc ? dc / ndc : 128;
+
+    // 3. conduct pred
+
+    for (int i = 0; i < bh; i++) {
+        for (int j = 0; j < bw; j++) {
+            int16_t x = *c1_pixbuf_geti16c(pix_ref, by + i, bx + j);
+            output[i * bw + j] = dc + C1_ROUND_MID(x * (*cfl_alpha), 64);
+        }
+    }
+    return 0;
+}
+
 int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
-                 const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
-    int r;
-    if (c1_pred_is_inter(opt->mode)) {
-        r = c1pd__predict_inter(b, output, pix, opt);
+                 const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t *cfl_alpha) {
+    int r = 0;
+    c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
+    if (opt->use_cfl && opt->ci > 0) {
+        c1_pixbuf_t ref_pix = c1_pixbuf_fromchnl(pix, 0);
+        r = c1pd_predict_cfl(b, output, &ci_pix, &ref_pix, cfl_alpha);
+        c1_pixbuf_clear(&ref_pix);
+    } else if (c1_pred_is_inter(opt->mode)) {
+        r = c1pd__predict_inter(b, output, &ci_pix, opt);
     } else if (c1_pred_is_intra(opt->mode)) {
-        r = c1pd__predict_intra(b, output, pix, opt);
+        r = c1pd__predict_intra(b, output, &ci_pix, opt);
     } else {
         warning2("invalid pred mode %d", opt->mode);
-        return -1;
+        r = -1;
     }
+dtor:
+    c1_pixbuf_clear(&ci_pix);
     return r;
 }
