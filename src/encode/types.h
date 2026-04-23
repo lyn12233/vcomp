@@ -250,6 +250,12 @@ static uint8_t c1_sz2hgt(C1_2D_SZ sz) {
     static const uint8_t lookup[4] = {8, 16, 32, 64};
     return lookup[sz];
 }
+static int c1_pred_is_inter(C1_PRED_MODE mode) {
+    return mode >= C1_PRED_MVNEAREST && mode <= C1_PRED_MVNEW;
+}
+static int c1_pred_is_intra(C1_PRED_MODE mode) {
+    return mode >= C1_PRED_DC && mode <= C1_PRED_PAETH;
+}
 
 #define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
 #define C1_ROUND_MID(val, div) (((val) + ((div) >> 1)) / (div))

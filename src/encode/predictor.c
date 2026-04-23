@@ -18,6 +18,9 @@ static void c1pd__memset16(int16_t *output, int16_t val, int nb) {
 static int16_t c1pd__abs_dif(int16_t a, int16_t b) {
     return a > b ? a - b : b - a;
 }
+static int c1pd__clamp(int a, int lb, int ub) {
+    return a < lb ? lb : a > ub ? ub : a;
+};
 
 // --- intra predictor core impls ---
 
@@ -252,7 +255,7 @@ c1pd_intra_func_t c1pd_intra_preds[C1_PD_INTRA_CNT - 1][C1_SIZE_CNT] = {
     {c1pd__dir_203_8_8, c1pd__dir_203_16_16, c1pd__dir_203_32_32, c1pd__dir_203_64_64},
     {c1pd__paeth_8_8, c1pd__paeth_16_16, c1pd__paeth_32_32, c1pd__paeth_64_64},
 };
-// first index: has_top
+// first index: has_left
 c1pd_intra_func_t c1pd_dc_preds[2][2][C1_SIZE_CNT] = {
     {
         {c1pd__dc_128_8_8, c1pd__dc_128_16_16, c1pd__dc_128_32_32, c1pd__dc_128_64_64},
@@ -277,8 +280,8 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
                                const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
     // 0. abbrv attrs from b
     const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
-    const int border_x = (int)b->sb_x * 16 + b->xoff - 1;
-    const int border_y = (int)b->sb_y * 16 + b->yoff - 1;
+    const int border_x = (int)b->sb_x * 64 + b->xoff - 1;
+    const int border_y = (int)b->sb_y * 64 + b->yoff - 1;
     // 1. prepare above and left
     uint8_t avail_above, avail_left; // indices for dc pred
     const int16_t *above;
@@ -290,7 +293,7 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     } else {
         avail_above = 1;
         const int delta = border_x; // delta>=-1
-        above_tmp = c1_mpool_alloc_def(bh + bw);
+        above_tmp = c1_mpool_alloc_def((bh + bw) * sizeof(int16_t));
         // border at least bh+bw offs -1, ozwis fill 128 at inval pos
         if (delta < 0)
             above_tmp[0] = 128;
@@ -310,7 +313,7 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     } else {
         avail_left = 1;
         const int delta = border_y;
-        left_tmp = c1_mpool_alloc_def(bh + bw);
+        left_tmp = c1_mpool_alloc_def((bh + bw) * sizeof(int16_t));
         if (delta < 0)
             left_tmp[0] = 128;
         for (int i = delta < 0 ? -delta : 0; i < bh + bw; i++) {
@@ -324,21 +327,67 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
         left = left_tmp + 1;
     }
 
-    // conduct pred
+    // gather pix if src is used in prediction (currently only paeth mode)
+    int16_t *input = NULL;
+    if (opt->mode == C1_PRED_PAETH) {
+        input = c1_mpool_alloc_def(bh * bw * sizeof(int16_t));
+        for (int i = 0; i < bh; i++) {
+            for (int j = 0; j < bw; j++) {
+                input[i * bw + j] = *c1_pixbuf_geti16c(pix, border_y + 1 + i, border_x + 1 + j);
+            }
+        }
+    }
+    // conduct pred, special case for dc mode
+    c1pd_intra_func_t pred_func;
+    if (opt->mode == C1_PRED_DC) {
+        pred_func = c1pd_dc_preds[avail_left][avail_above][opt->size];
+    } else {
+        pred_func = c1pd_intra_preds[opt->mode - C1_PRED_DC - 1][opt->size];
+    }
+    pred_func(input, output, above, left);
 
-dtor:
+dtor2: // currently unused label?
+    if (input) {
+        c1_mpool_dealloc_def(bh * bw * sizeof(int16_t), input);
+    }
+
+dtor: // unused label?
     if (above_tmp) {
-        c1_mpool_dealloc_def(bh + bw, above_tmp);
+        c1_mpool_dealloc_def((bh + bw) * sizeof(int16_t), above_tmp);
     }
     if (left_tmp) {
-        c1_mpool_dealloc_def(bh + bw, left_tmp);
+        c1_mpool_dealloc_def((bh + bw) * sizeof(int16_t), left_tmp);
     }
+    return 0;
 }
 
 static int c1pd__predict_inter(const c1enc_block_t *b, int16_t *output, //
                                const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
-    //
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+    const int mv_miny = -by, mv_minx = -bx;
+    const int mv_maxy = pix->h - by - bh, mv_maxx = pix->w - bx - bw;
+    const int mv_y = c1pd__clamp(opt->mv.y, mv_miny, mv_maxy);
+    const int mv_x = c1pd__clamp(opt->mv.x, mv_minx, mv_maxx);
+    for (int i = 0; i < bh; i++) {
+        for (int j = 0; j < bw; j++) {
+            output[i * bw + j] = *c1_pixbuf_geti16c(pix, by + i + mv_y, bx + j + mv_x);
+        }
+    }
+    return 0;
 }
 
 int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
-                 const c1_pixbuf_t *pix, const c1pd_option_t *opt) {}
+                 const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+    int r;
+    if (c1_pred_is_inter(opt->mode)) {
+        r = c1pd__predict_inter(b, output, pix, opt);
+    } else if (c1_pred_is_intra(opt->mode)) {
+        r = c1pd__predict_intra(b, output, pix, opt);
+    } else {
+        warning2("invalid pred mode %d", opt->mode);
+        return -1;
+    }
+    return r;
+}
