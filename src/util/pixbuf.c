@@ -148,7 +148,8 @@ c1_pixbuf_t c1_pixbuf_fromchnl(const c1_pixbuf_t *pix, int chnl) {
 
 void *c1_pixbuf_get(c1_pixbuf_t *pix, int y, int x) {
     y = y < 0 ? y + pix->h : y, x = x < 0 ? x + pix->w : x;
-    assert_fatal(y >= 0 && y < pix->h && x >= 0 && x < pix->w);
+    assert_fatal_ex(y >= 0 && y < pix->h && x >= 0 && x < pix->w, //
+                    "y=%d, x=%d, h=%d, w=%d", y, x, pix->h, pix->w);
     if (pix->h_inv)
         y = pix->h - 1 - y;
     if (pix->w_inv)

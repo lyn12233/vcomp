@@ -13,7 +13,7 @@ target_link_libraries(test_blockd PRIVATE vcomp_enc_asan)
 add_executable(test_mem test_mem.c)
 target_link_libraries(test_mem PRIVATE vcomp_util_asan)
 add_executable(test_search test_search.c)
-target_link_libraries(test_search PRIVATE vcomp_util_asan)
+target_link_libraries(test_search PRIVATE vcomp_util_asan vcomp_enc_asan)
 
 foreach(targ test_ent)
     target_link_libraries(${targ} PRIVATE vcomp_flags)

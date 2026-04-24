@@ -300,7 +300,7 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
         if (delta < 0)
             above_tmp[0] = 128;
         for (int j = delta < 0 ? -delta : 0; j < bh + bw; j++) {
-            if (j + delta > pix->w) {
+            if (j + delta >= pix->w) {
                 for (; j < bh + bw; j++)
                     above_tmp[j] = 128;
                 break;
@@ -319,7 +319,7 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
         if (delta < 0)
             left_tmp[0] = 128;
         for (int i = delta < 0 ? -delta : 0; i < bh + bw; i++) {
-            if (i + delta > pix->h) {
+            if (i + delta >= pix->h) {
                 for (; i < bh + bw; i++)
                     left_tmp[i] = 128;
                 break;
@@ -362,6 +362,7 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     return 0;
 }
 
+// TODO in case not newmv, the mv is a delta to candidate mv gathered? FUCK
 static int c1pd__predict_inter(const c1enc_block_t *b, int16_t *output, //
                                const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
     const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
