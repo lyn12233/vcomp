@@ -1,0 +1,9 @@
+this is a project developing a simple video codec heavily referred to av1 documentations. during developing, the following criterion should be frequently checked:
+- the allocation and deallocation scheme of certain types of objects, e.g. c1enc_partition_t uses memory pool, c1enc_block_t used memory pool previously and now uses free/malloc directly;
+- during ci/cd, potential new fields will be added to structures, but they are often neglected to be initialized. this should be especially constantly checked in ctor/dtor style functions.
+- fields that are not used but prevails for a long time should be reported.
+- checking intricate indexing and naming fallacies are crucial, e.g. mistreating i and j, inter and intra, height and width and strides. note there are common conventions, like intra first, inter second, i for height/row, j for width/col, row the major axis, 2d compact data indexed like i*w_stride+j, ... other indices are also important e.g. color index (ci) indicating yuv planes.
+- for implementation clarity, some attrs should be deduced at compile time but are treated dynamic, e.g. the color format for a pixel buffer. though not checked but "assert", they should be srutinized with inline comments considered.
+- common memory violation/leak/ub bugs prune to trigger in c language.
+- digit underflow/overflow/div-by-zero are less common, though bots will always emphasize on them. assume most overflows do not occur before checking.
+- well structure of header files: possible file-level comment + ifndef header identifier scope + ifdef cplusplus extern c scope + local include + cross module include + possible 3rd party include + std include. local include paths should not have "src/" prefix.

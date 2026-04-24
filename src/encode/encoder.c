@@ -109,23 +109,17 @@ void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
 int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y, int sb_x) {
     sb->sb_y = sb_y, sb->sb_x = sb_x;
 
-    if (frm->inf.frame_type == C1_FRAME_I) {
-        sb->force_all_intra = 1;
-    } else if (frm->inf.frame_type == C1_FRAME_P) {
-        sb->force_all_intra = 0;
-        sb->is_all_intra = 0;
-    } else {
-        fatal("unhandled frame type %d", frm->inf.frame_type);
-    }
     sb->q_index_delta = 0;
 
     if (!sb->root) {
-        // create a mb tree
-        sb->root = c1_mpool_alloc(&c1enc_part_pool);
-        assert_fatal(sb->root);
+        // init, create a mb tree
+        assert_fatal((sb->root = c1_mpool_alloc(&c1enc_part_pool)));
         *sb->root = (c1enc_partition_t){0};
+        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, sb_y, sb_x, 0, 0, 0);
+    } else {
+        c1enc_partition_reset_cands(sb->root);
+        // case init, cand cnt is 0, no need to reset
     }
-    c1enc_partition_update(sb->root, sb, C1_SZ_64_64, sb_y, sb_x, 0, 0, 0);
     return 0;
 }
 int c1enc_sb_clear(c1enc_super_block_t *sb) {
@@ -149,7 +143,7 @@ int c1enc_sb_validate(const c1enc_super_block_t *sb) {
 }
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "\"SuperBlock [%sqidelta=%d]\"\r\n", sb->force_all_intra ? "force_intra, " : "", sb->q_index_delta);
+    fprintf(f, "\"SuperBlock [qidelta=%d]\"\r\n", sb->q_index_delta);
     if (sb->root) {
         c1enc_partition_repr(f, sb->root, ind);
     } else {
@@ -162,9 +156,9 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
-                           uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
-                           uint16_t buf_offs) {
+int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
+                         uint16_t buf_offs) {
     // 0. case size change
     // note init means {0}, which may or may not effect
     if (part->size != size) {
@@ -185,7 +179,7 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
         if (size == C1_SZ_8_8) {
             // terminal size, init block
             part->is_partition = 0;
-            part->b = malloc(sizeof(c1enc_block_t));
+            assert_fatal(!part->b && (part->b = malloc(sizeof(c1enc_block_t))));
             *part->b = (c1enc_block_t){0};
             c1enc_block_update(part->b, sb, size, y, x, sb_y, sb_x, buf_offs);
         } else {
@@ -202,14 +196,23 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
 
             part->is_partition = 1;
             for (int i = 0; i < 4; i++) {
-                part->parts[i] = c1_mpool_alloc(&c1enc_part_pool);
-                assert_fatal(part->parts[i]);
+                assert_fatal(!part->parts[i] && (part->parts[i] = c1_mpool_alloc(&c1enc_part_pool)));
                 *part->parts[i] = (c1enc_partition_t){0};
-                c1enc_partition_update(part->parts[i], sb, new_sz,                 //
-                                       y + offs[i][0], x + offs[i][1], sb_y, sb_x, //
-                                       buf_offs + i * new_hgt * new_wid);
+                c1enc_partition_init(part->parts[i], sb, new_sz,                 //
+                                     y + offs[i][0], x + offs[i][1], sb_y, sb_x, //
+                                     buf_offs + i * new_hgt * new_wid);
             }
         }
+    }
+    return 0;
+}
+int c1enc_partition_reset_cands(c1enc_partition_t *part) {
+    if (part->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc_partition_reset_cands(part->parts[i]);
+        }
+    } else {
+        part->b->intra_cand_cnt = part->b->inter_cand_cnt = 0;
     }
     return 0;
 }

@@ -47,15 +47,20 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
-                           uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                    //
-                           uint16_t buf_offs);
+/** init a partition that is {0}
+ */
+int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
+                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
+                         uint16_t buf_offs);
+/** reset candidate count in blocks recursively in partition
+ */
+int c1enc_partition_reset_cands(c1enc_partition_t *part);
 int c1enc_partition_clear(c1enc_partition_t *part);
 int c1enc_partition_validate(const c1enc_partition_t *part);
 void c1enc_partition_repr(FILE *f, const c1enc_partition_t *part, int ind);
 
 int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
-                       uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,             //
+                       uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
                        uint16_t buf_offs);
 int c1enc_block_clear(c1enc_block_t *b);
 int c1enc_block_validate(c1enc_block_t *b);

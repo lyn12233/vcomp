@@ -67,7 +67,7 @@ static const int32_t *c1_pixbuf_geti32c(const c1_pixbuf_t *pix, int h, int w) {
     return (const int32_t *)c1_pixbuf_getc(pix, h, w);
 }
 static int16_t *c1_pixbuf_geti16(c1_pixbuf_t *pix, int h, int w) {
-    return (int16_t *)c1_pixbuf_get(pix, w, h);
+    return (int16_t *)c1_pixbuf_get(pix, h, w);
 }
 static const int16_t *c1_pixbuf_geti16c(const c1_pixbuf_t *pix, int h, int w) {
     return (const int16_t *)c1_pixbuf_getc(pix, h, w);

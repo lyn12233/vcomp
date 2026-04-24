@@ -1,5 +1,6 @@
 #include "transform.h"
-#include "src/util/log.h"
+
+#include "util/log.h"
 #include "util/mem.h"
 #include "util/pixbuf.h"
 

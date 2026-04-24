@@ -102,7 +102,7 @@ static void c1pd__dir_z1(int16_t *output,                           //
         int x = (i + 1) * dx; // measures the x offset on "above" row
         int base = x >> frac_bits;
         const int shift = (x & 0x3f) >> 1;
-        if (base > base_max) {
+        if (base >= base_max) {
             for (int i2 = i; i2 < h; i2++) {
                 c1pd__memset16(output + w * i2, above[base_max], w);
             }
@@ -348,12 +348,11 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     }
     pred_func(input, output, above, left);
 
-dtor2: // currently unused label?
+    // destruction
+
     if (input) {
         c1_mpool_dealloc_def(bh * bw * sizeof(int16_t), input);
     }
-
-dtor: // unused label?
     if (above_tmp) {
         c1_mpool_dealloc_def((bh + bw) * sizeof(int16_t), above_tmp);
     }

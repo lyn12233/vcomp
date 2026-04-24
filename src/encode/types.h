@@ -156,8 +156,6 @@ struct c1enc_super_block_s {
     int32_t qcoef_buf[64 * 64 * 3];
 
     uint16_t sb_y, sb_x;     // super block is at y row and x col in frame
-    uint8_t force_all_intra; // ?
-    uint8_t is_all_intra;    // ?
 
     int8_t q_index_delta;
 
