@@ -17,8 +17,8 @@ set(VCOMP_ENABLE_TESTS ON CACHE BOOL "build tests")
 set(VCOMP_ENABLE_LOGGING ON CACHE BOOL "print error messages using provided callback")
 set(VCOMP_ENABLE_ASAN ON CACHE BOOL "enable asan")
 
-# 2. global incdir
 foreach(targ vcomp_flags vcomp_flags_asan)
+    # 2. global incdir
     target_include_directories(${targ} INTERFACE 
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src
@@ -36,6 +36,17 @@ foreach(targ vcomp_flags vcomp_flags_asan)
         $<$<PLATFORM_ID:Windows>:_CRT_SECURE_NO_WARNINGS=1> # yah
         $<$<PLATFORM_ID:Windows>:fseeko=_fseeki64;ftello=_ftelli64>
     )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        target_compile_options(${targ} INTERFACE
+            /W4 /w14242 /w14287
+        )
+    else()
+        target_compile_options(${targ} INTERFACE
+            -Wconversion -Wno-sign-conversion -Wuninitialized
+            -Wshadow
+            -Wfloat-conversion -Wfloat-equal
+        )
+    endif()
 endforeach()
 
 if(VCOMP_ENABLE_ASAN)

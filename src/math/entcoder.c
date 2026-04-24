@@ -1,13 +1,14 @@
 #include "entcoder.h"
 #include "util/log.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 #define C1ENT_PROB_SHIFT 6
 #define C1ENT_MIN_PROB 4
 
-static int c1ent__floorlog2(uint16_t x) {
-    for (int i = 15; i >= 0; i--) {
+static int8_t c1ent__floorlog2(uint16_t x) {
+    for (int8_t i = 15; i >= 0; i--) {
         if (x & (1 << i))
             return i;
     }
@@ -37,7 +38,8 @@ int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym) 
     // symbol's fraction (fl,fh], measured by dist to highest cdf
     uint32_t fl = sym > 0 ? (1 << 15) - cdf[sym - 1] : (1 << 15);
     uint32_t fh = (1 << 15) - cdf[sym];
-    uint32_t low = enc->low, rng = enc->rng;
+    uint32_t low = enc->low;
+    uint16_t rng = enc->rng;
     assert_fatal(rng >= (1 << 15) && fl >= fh && fl <= (1 << 15));
     uint32_t u, v;
     if (fl < (1 << 15)) {
@@ -45,7 +47,7 @@ int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym) 
           + C1ENT_MIN_PROB * (nbsym - sym);
         v = ((rng >> 8) * (uint32_t)(fh >> C1ENT_PROB_SHIFT) >> (7 - C1ENT_PROB_SHIFT))
           + C1ENT_MIN_PROB * (nbsym - 1 - sym);
-        low += rng - u, rng = u - v;
+        low += rng - u, rng = (uint16_t)(u - v);
     } else {
         // first symbol fl=1<<5, l not changed, u=rng
         rng -= ((rng >> 8) * (uint32_t)(fh >> C1ENT_PROB_SHIFT) >> (7 - C1ENT_PROB_SHIFT))
@@ -53,9 +55,9 @@ int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym) 
     }
     // normalize the range to >=1>>15, write low's significant bits.
     // refer to entenc.c:56 od_ec_enc_normalize
-    int d = 15 - c1ent__floorlog2(rng);
-    int c = enc->cnt; // room for output?
-    int s = c + d;    // shifted cnt
+    int16_t d = (int16_t)15 - c1ent__floorlog2(rng);
+    int16_t c = enc->cnt; // room for output?
+    int16_t s = c + d;    // shifted cnt
     if (s >= 0) {
         // extend 2 slots(32bits) for output
         if (enc->offs + 2 > enc->precarry_sz) {
@@ -81,7 +83,7 @@ int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym) 
         s = c + d - 8;
     }
     // shift rng and low, update cnt
-    enc->low = low << d, enc->rng = rng << d, enc->cnt = s;
+    enc->low = low << d, enc->rng = (uint16_t)(rng << d), enc->cnt = s;
     return 0;
 }
 
@@ -168,11 +170,11 @@ int c1ent_dec_init(c1ent_dec_t *dec, uint32_t sz, //
         - SymMaxBits = sz*8-15              # desired bits to read, but without currently read bits(8 or 15)
     */
     dec->num_bits = (sz == 1) ? 8 : 15;
-    if ((dec->buf = read_bits(ctx, dec->num_bits)) < 0) {
+    if ((dec->buf = (uint16_t)read_bits(ctx, dec->num_bits)) < 0) {
         warning2("cant read %d bits", dec->num_bits);
         return -1;
     }
-    dec->padded_buf = (sz == 1) ? dec->buf << 7 : dec->buf;
+    dec->padded_buf = (uint16_t)((sz == 1) ? dec->buf << 7 : dec->buf);
     dec->val = ((1 << 15) - 1) ^ dec->padded_buf;
     dec->rng = 1 << 15;
     dec->max_bits = sz * 8 - 15;
@@ -237,28 +239,28 @@ int c1ent_decode_cdf(c1ent_dec_t *dec,                                      //
     }
 
     // (2) update decoder ctx to a new rng-val
-    dec->rng = prev - cur, dec->val -= cur;
+    dec->rng = (uint16_t)(prev - cur), dec->val -= (uint16_t)cur;
     // renormalize rng-val via filling with new bits
     // unused bits for <rng>, need to add up effective bits to 15
-    int bits = 15 - c1ent__floorlog2(dec->rng); // 0..15
+    uint8_t bits = 15 - c1ent__floorlog2(dec->rng); // 0..15
     dec->rng <<= bits;
     // clip number of bits to read to (0, max_bits)
-    dec->num_bits = (bits <= dec->max_bits) ? bits : c1ent__max(dec->max_bits, 0);
-    if ((dec->buf = read_bits(ctx, dec->num_bits)) < 0) {
+    dec->num_bits = (bits <= dec->max_bits) ? bits : (uint8_t)c1ent__max(dec->max_bits, 0);
+    if ((dec->buf = (uint16_t)read_bits(ctx, dec->num_bits)) < 0) {
         warning2("cant read %d bits", dec->num_bits);
         return -1;
     }
     // for bits not read, fill with 0's
-    dec->padded_buf = dec->buf << (bits - dec->num_bits);
+    dec->padded_buf = (uint16_t)(dec->buf << (bits - dec->num_bits));
     // symbol value scales up 2**bits, then minus padded_buf
     // symval is actually stored in an inverse style, measuring dist form highest cdf(WTF)
-    dec->val = dec->padded_buf ^ (((dec->val + 1) << bits) - 1);
+    dec->val = (uint16_t)(dec->padded_buf ^ (((dec->val + 1) << bits) - 1));
     dec->max_bits -= bits;
     return sym;
     // to update cdf, call update_cdf directly.
 }
 
-void c1ent_update_cdf(uint16_t *cdf, int sym, int nbsym) {
+void c1ent_update_cdf(uint16_t *cdf, uint8_t sym, uint8_t nbsym) {
     assert_fatal(sym >= 0 && sym < nbsym);
     int rate = 3 + (cdf[nbsym] > 15) + (cdf[nbsym] > 31) + c1ent__min(c1ent__floorlog2(nbsym), 2);
     int tmp = 0;

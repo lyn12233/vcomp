@@ -2,6 +2,7 @@
 #include "log.h"
 
 #include <ctype.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,7 +85,7 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
     debug("mpool found free idx %d at node %p", offs, n);
     // set bit msk
     uint8_t *msk = n->data + (int)p->sz * p->nb;
-    uint8_t bytemsk = 1 << (offs % 8);
+    uint8_t bytemsk = (uint8_t)(1 << (offs % 8));
     msk[offs / 8] |= bytemsk;
 
     return n->data + offs * p->sz;
@@ -103,13 +104,13 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
     if (!n || (pbuf - n->data) % p->sz != 0)
         return -1;
     // try to unset msk
-    int offs = (pbuf - n->data) / p->sz;
+    size_t offs = (pbuf - n->data) / p->sz;
     uint8_t *msk = n->data + (int)p->sz * p->nb;
-    uint8_t bytemsk = 1 << (offs % 8);
+    uint8_t bytemsk = (uint8_t)(1 << (offs % 8));
     if (!(msk[offs / 8] & bytemsk))
         return -1;
     msk[offs / 8] &= ~bytemsk;
-    debug("mpool free idx %d at node %p", offs, n);
+    debug("mpool free idx %zu at node %p", offs, n);
 
     // try to del node if empty
     if (c1_mpool__node_isempty(p, n)) {

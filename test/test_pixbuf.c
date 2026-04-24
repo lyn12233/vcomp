@@ -1,14 +1,15 @@
 #include <stdio.h>
 
-#include "src/util/pixbuf.h"
 #include "src/util/log.h"
+#include "src/util/pixbuf.h"
+
 
 int main() {
     c1_pixbuf_t pb = c1_pixbuf_create(C1_PIXBUF_C1I8, 8, 8);
     for (int y = 0; y < 8; y++) {
         for (int x = 0; x < 8; x++) {
             uint8_t *p = c1_pixbuf_get(&pb, y, x);
-            *p = (y << 4) + x;
+            *p = (uint8_t)((y << 4) + x);
         }
     }
     c1_pixbuf_repr(stdout, &pb);

@@ -74,7 +74,7 @@ c1_pixbuf_t c1_pixbuf_cvt(const c1_pixbuf_t *in, C1_PIXBUF_TYPE type) {
         if (type == C1_PIXBUF_C1I16) {
             for (int y = 0; y < in->h; y++) {
                 for (int x = 0; x < in->w; x++) {
-                    *c1_pixbuf_geti16(&res, y, x) = *c1_pixbuf_geti32c(in, y, x);
+                    *c1_pixbuf_geti16(&res, y, x) = (int16_t)*c1_pixbuf_geti32c(in, y, x);
                 }
             }
         } else {

@@ -33,7 +33,7 @@ static int64_t c1tx__clamp64(int64_t x, int64_t lb, int64_t ub);
     #define NewSqrt2 0
     #define NewSqrt2Bits 12
 #endif
-#define clamp_value(x, ...) c1tx__clamp64(x, -(1 << (16 - 1)), (1 << (16 - 1)) - 1)
+#define clamp_value(x, ...) (int32_t)c1tx__clamp64(x, -(1 << (16 - 1)), (1 << (16 - 1)) - 1)
 
 #define av1_idct4 static c1tx__av1_idct4
 #define av1_idct8 static c1tx__av1_idct8

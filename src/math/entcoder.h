@@ -111,7 +111,7 @@ int c1ent_decode_cdf(c1ent_dec_t *dec,                                      //
 
 /** update the cdf accroding to the current symbol
  */
-void c1ent_update_cdf(uint16_t *cdf, int sym, int nbsym);
+void c1ent_update_cdf(uint16_t *cdf, uint8_t sym, uint8_t nbsym);
 
 /** a simple wrapper for string as bitstream */
 typedef struct {

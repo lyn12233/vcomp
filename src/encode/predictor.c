@@ -111,7 +111,7 @@ static void c1pd__dir_z1(int16_t *output,                           //
         for (int j = 0; j < w; j++) {
             if (base < base_max) {
                 int val = above[base] * (32 - shift) + above[base + 1] * shift;
-                output[w * i + j] = C1_ROUND_BITS(val, 5);
+                output[w * i + j] = (int16_t)C1_ROUND_BITS(val, 5);
             } else {
                 output[w * i + j] = above[base_max];
             }
@@ -146,7 +146,7 @@ static void c1pd__dir_z2(int16_t *output,                           //
                 const int shift = (y & 0x3f) >> 1;
                 val = left[base_y] * (32 - shift) + left[base_y + 1] * shift;
             }
-            output[w * i + j] = C1_ROUND_BITS(val, 5);
+            output[w * i + j] = (int16_t)C1_ROUND_BITS(val, 5);
         }
     }
 }
@@ -164,7 +164,7 @@ static void c1pd__dir_z3(int16_t *output,                           //
         for (int i = 0; i < h; i++) {
             if (base < base_max) {
                 int val = left[base] * (32 - shift) + left[base + 1] * shift;
-                output[w * i + j] = C1_ROUND_BITS(val, 5);
+                output[w * i + j] = (int16_t)C1_ROUND_BITS(val, 5);
             } else {
                 while (i < h) {
                     output[w * i + j] = left[base_max];
@@ -281,7 +281,7 @@ static const int16_t c1pd__128_border[128] = {
 static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
                                const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
     // 0. abbrv attrs from b
-    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const uint8_t bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
     const int border_x = (int)b->sb_x * 64 + b->xoff - 1;
     const int border_y = (int)b->sb_y * 64 + b->yoff - 1;
     // 1. prepare above and left
@@ -333,9 +333,9 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     int16_t *input = NULL;
     if (opt->mode == C1_PRED_PAETH) {
         input = c1_mpool_alloc_def(bh * bw * sizeof(int16_t));
-        for (int i = 0; i < bh; i++) {
-            for (int j = 0; j < bw; j++) {
-                input[i * bw + j] = *c1_pixbuf_geti16c(pix, border_y + 1 + i, border_x + 1 + j);
+        for (uint8_t i = 0; i < bh; i++) {
+            for (uint8_t j = 0; j < bw; j++) {
+                input[i * bw + j] = *c1_pixbuf_geti16c(pix, border_y + 1 + (int)i, border_x + 1 + (int)j);
             }
         }
     }
@@ -411,7 +411,7 @@ int c1pd_predict_cfl(const c1enc_block_t *b, int16_t *output, //
     else if (divident > 16 * divisor) {
         *cfl_alpha = 16;
     } else {
-        *cfl_alpha = c1pd__clamp(divident / divisor, -16, 16);
+        *cfl_alpha = (int8_t)c1pd__clamp(divident / divisor, -16, 16);
     }
 
     // 2. derive implicit dc

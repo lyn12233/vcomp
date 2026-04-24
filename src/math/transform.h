@@ -4,8 +4,8 @@
 extern "C" {
 #endif
 
-#include "src/encode/types.h"
-#include "src/util/pixbuf.h"
+#include "encode/types.h"
+#include "util/pixbuf.h"
 
 #include <stdint.h>
 
@@ -33,9 +33,9 @@ typedef void (*c1tx_func_t)(const int32_t *input, int32_t *output, int8_t cos_bi
 extern c1tx_func_t c1tx_func_array[C1_TX1_TYPE_CNT];
 extern c1tx_func_t c1tx_inv_func_array[C1_TX1_TYPE_CNT];
 
-extern const int8_t c1tx_cos_bit_col[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
-extern const int8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
-static const int8_t c1tx_inv_cos_bit = 12;
+extern const uint8_t c1tx_cos_bit_col[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
+extern const uint8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT];
+static const uint8_t c1tx_inv_cos_bit = 12;
 extern const int8_t c1tx_shift_ls[C1_TX2_SIZE_CNT][3];
 extern const int8_t c1tx_inv_shift_ls[C1_TX2_SIZE_CNT][2];
 

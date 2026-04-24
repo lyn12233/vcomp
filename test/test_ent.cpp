@@ -72,7 +72,7 @@ TEST(EntropyEncoder, EncodeIntegrity_1) {
 TEST(EntropyEncoder, StrStrmIntegrity) {
     uint8_t data[100];
     for (int i = 0; i < 100; i++) {
-        data[i] = rand();
+        data[i] = (uint8_t)(rand()%256);
     }
     c1ent_strstrm_t strm = {data, 800, 0};
     for (int i = 0; i < 100; i += 2) {
@@ -150,7 +150,7 @@ TEST(EntropyEncoder, Compound_1) {
     for (int i = 0; i < Ntp; i++) {
         symnbs[i] = std::clamp(rand() % 16, 2, 16);
         for (int j = 0; j < symnbs[i] - 1; j++) {
-            cdfs[i][j] = std::clamp(rand() % (1 << 15), 0, (1 << 15));
+            cdfs[i][j] = (uint16_t)std::clamp(rand() % (1 << 15), 0, (1 << 15));
         }
         qsort(cdfs[i], symnbs[i] - 1, sizeof(uint16_t), comp_16);
         cdfs[i][symnbs[i] - 1] = (1 << 15);
@@ -195,9 +195,9 @@ TEST(EntropyEncoder, CdfUpdate_1) {
         ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
         info("after %d: %d,%d,%d,%d", r % 4, cdf[0], cdf[1], cdf[2], cdf[3]);
     }
-    for (int i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < 4; i++) {
         cdf[4] = 0;
-        for (int j = 0; j < 100; j++) {
+        for (uint8_t j = 0; j < 100; j++) {
             c1ent_update_cdf(cdf, i, 4);
             ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
         }

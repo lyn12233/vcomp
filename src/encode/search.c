@@ -10,25 +10,28 @@
 #include <stdint.h>
 
 #define C1__UVMODE_SING_SRCH_CNT 4
-#define C1__WORSE_MODE_ACCEPTABLE_SCALE 3 / 2
+#define C1__WORSE_MODE_ACCEPTABLE_SCALE 3 / 2 // no parenthesis. mult then div by 2**n
 #define C1__MERGE_THRE_SAD_DIF_SCALE 3 / 4
 
-static int c1enc__cmp(int a, int b) {
+static int c1enc__cmp(uint32_t a, uint32_t b) {
+    return (a > b) - (a < b);
+}
+static int c1enc__cmpf(float a, float b) {
     return (a > b) - (a < b);
 }
 
 /** calculate sum of asbolute difference of a plane(p)
  @param pix c3i16
 */
-static int c1enc__calc_p_sad(const c1enc_block_t *b, const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+static uint32_t c1enc__calc_p_sad(const c1enc_block_t *b, const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
     const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
     const int by = (int)b->sb_y * 64 + b->yoff;
     const int bx = (int)b->sb_x * 64 + b->xoff;
-    int res = 0;
+    uint32_t res = 0;
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++) {
-            res += c1_abs_dif_i16(                           //
+            res += (uint16_t)c1_abs_dif_i16(                 //
                 *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j), //
                 b->p[opt->ci].diff[i * bw + j]               //
             );
@@ -74,13 +77,13 @@ static int c1enc__is_sad_smooth(int32_t a0, int32_t a1, int32_t a2, int32_t a3) 
 int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b) {
     uint8_t mask = a->mask & b->mask;
     if (mask & C1_RD_FIT_BIT) {
-        return c1enc__cmp(a->fitness, b->fitness);
+        return c1enc__cmpf(a->fitness, b->fitness);
     } else if (mask & C1_RD_DIS_BIT) {
         return -c1enc__cmp(a->d, b->d);
     } else if (mask & C1_RD_RATE_BIT) {
         return -c1enc__cmp(a->r, b->r);
     } else if (mask & C1_RD_SSE_BIT) {
-        return -c1enc__cmp(a->sse, b->sse);
+        return -c1enc__cmpf(a->sse, b->sse);
     } else if (mask & C1_RD_SAD_BIT) {
         return -c1enc__cmp(a->sad, b->sad);
     }
@@ -94,7 +97,7 @@ c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t 
         (mask & C1_RD_RATE_BIT) ? a->r + b->r : 0,
         (mask & C1_RD_DIS_BIT) ? a->d + b->d : 0,
         (mask & C1_RD_SSE_BIT) ? a->sse + b->sse : 0,
-        (mask & C1_RD_SAD_BIT) ? c1_clamp64(a->sad + b->sad, INT32_MIN, INT32_MAX) : 0,
+        (mask & C1_RD_SAD_BIT) ? (uint32_t)c1_clamp64(a->sad + b->sad, INT32_MIN, INT32_MAX) : 0,
         (mask & C1_RD_FIT_BIT) ? a->fitness + b->fitness : 0,
     };
 }
@@ -102,7 +105,7 @@ c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t 
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat) {
     c1enc_rdstat_t *stats = b->intra_cand_stats;
     c1enc_mi_intra_t *cands = b->intra_cands;
-    const int nbcand = b->intra_cand_cnt;
+    const uint8_t nbcand = b->intra_cand_cnt;
 
     // nbcand<=CAND_CNT and the arrays contain CAND_CNT+1 slots
     stats[nbcand] = *stat, cands[nbcand] = *mi;
@@ -133,7 +136,7 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
             break;
     }
     // update candidate count
-    b->inter_cand_cnt = nbcand < C1_ENC_INTER_CAND_CNT ? nbcand + 1 : C1_ENC_INTER_CAND_CNT;
+    b->inter_cand_cnt = (uint8_t)(nbcand < C1_ENC_INTER_CAND_CNT ? nbcand + 1 : C1_ENC_INTER_CAND_CNT);
     return 0;
 }
 
@@ -174,7 +177,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
             pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
             c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
-            for (int ci = 0; ci < 3; ci++) {
+            for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
                 stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
@@ -191,7 +194,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
                 pred_opt.mode = mi.mode_y = mode;
                 c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
                 int8_t *const cfl_outputs[3] = {NULL, &mi.cfl_alpha_u, &mi.cfl_alpha_v};
-                for (int ci = 0; ci < 3; ci++) {
+                for (uint8_t ci = 0; ci < 3; ci++) {
                     pred_opt.ci = ci;
                     c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_outputs[ci]);
                     stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
@@ -218,7 +221,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
             pred_opt.mode = mode; // not setting mi
             int ysad = 0, uvsad = 0;
             int *const sad_targ[3] = {&ysad, &uvsad, &uvsad};
-            for (int ci = 0; ci < 3; ci++) {
+            for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
                 *(sad_targ[ci]) += c1enc__calc_p_sad(b, pix, &pred_opt);
@@ -310,13 +313,18 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
                  || (try_inter && p->b->inter_cand_cnt
                      && p->b->inter_cand_stats[0].sad <= part_stat_inter.sad * C1__MERGE_THRE_SAD_DIF_SCALE);
     if (can_merge) {
+        // merge. release partitions
+        p->is_partition = 0;
         for (int i = 0; i < 4; i++) {
             c1enc_partition_clear(p->parts[i]);
             c1_mpool_dealloc(&c1enc_part_pool, p->parts[i]);
+            p->parts[i] = NULL;
         }
     } else {
+        // do not merge, remain as partition and release tmp block
         c1enc_block_clear(p->b);
         free(p->b);
+        p->b = NULL;
     }
     return 0;
 }

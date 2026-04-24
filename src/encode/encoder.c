@@ -21,9 +21,9 @@ static void c1__print_ind(FILE *f, int ind) {
 
 int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // expected height and width
-    int eh = C1_ROUND_UP(pix->h, 64) * 64;
-    int ew = C1_ROUND_UP(pix->w, 64) * 64;
-    int hb = eh / 64, wb = ew / 64;
+    uint16_t eh = C1_ROUND_UP(pix->h, 64) * 64;
+    uint16_t ew = C1_ROUND_UP(pix->w, 64) * 64;
+    uint16_t hb = eh / 64, wb = ew / 64;
 
     if (eh != frm->inf.hgt_per_sb || ew != frm->inf.wid_per_sb) {
         // frame size (after rounding) has changed.
@@ -59,8 +59,8 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->pix = c1_pixbuf_create(C1_PIXBUF_C3I16, eh, ew);
         c1_pixbuf_paste(&frm->pix, pix, 0, 0);
     }
-    for (int i = 0; i < hb; i++) {
-        for (int j = 0; j < wb; j++)
+    for (uint16_t i = 0; i < hb; i++) {
+        for (uint16_t j = 0; j < wb; j++)
             c1enc_sb_update(frm->super_blocks + wb * i + j, frm, i, j);
     }
 
@@ -106,7 +106,7 @@ void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
     fprintf(f, ")\r\n");
 }
 
-int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y, int sb_x) {
+int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x) {
     sb->sb_y = sb_y, sb->sb_x = sb_x;
 
     sb->q_index_delta = 0;
@@ -115,7 +115,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y,
         // init, create a mb tree
         assert_fatal((sb->root = c1_mpool_alloc(&c1enc_part_pool)));
         *sb->root = (c1enc_partition_t){0};
-        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, sb_y, sb_x, 0, 0, 0);
+        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, 0, 0, sb_y, sb_x, 0);
     } else {
         c1enc_partition_reset_cands(sb->root);
         // case init, cand cnt is 0, no need to reset
@@ -195,7 +195,7 @@ int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D
             };
 
             part->is_partition = 1;
-            for (int i = 0; i < 4; i++) {
+            for (uint8_t i = 0; i < 4; i++) {
                 assert_fatal(!part->parts[i] && (part->parts[i] = c1_mpool_alloc(&c1enc_part_pool)));
                 *part->parts[i] = (c1enc_partition_t){0};
                 c1enc_partition_init(part->parts[i], sb, new_sz,                 //

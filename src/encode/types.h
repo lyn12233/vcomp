@@ -108,7 +108,7 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 #define C1_RD_FIT_BIT (1 << 4)
 typedef struct {
     uint8_t mask;
-    int32_t r, d;
+    uint32_t r, d;
     float sse;
     uint32_t sad;
     float fitness;

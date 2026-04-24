@@ -171,8 +171,8 @@ static void od_ec_enc_normalize(od_ec_enc *enc, od_ec_window low, unsigned rng) 
         enc->offs = offs;
     }
     enc->low = low << d;
-    enc->rng = rng << d;
-    enc->cnt = s;
+    enc->rng = (uint16_t)(rng << d);
+    enc->cnt = (int16_t)s;
 }
 
 /*Initializes the encoder.

@@ -38,7 +38,7 @@ void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind);
  @param frm frame info for sb
  @param y row offset in frame
 */
-int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int y, int x);
+int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t y, uint16_t x);
 int c1enc_sb_clear(c1enc_super_block_t *sb);
 int c1enc_sb_validate(const c1enc_super_block_t *sb);
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind);

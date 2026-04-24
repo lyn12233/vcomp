@@ -42,7 +42,7 @@ static int64_t c1tx__clamp64(int64_t x, int64_t lb, int64_t ub) {
     x = x > ub ? ub : x;
     return x;
 }
-static int c1__max(int a, int b) {
+static uint32_t c1__max(uint32_t a, uint32_t b) {
     return a > b ? a : b;
 }
 
@@ -68,13 +68,13 @@ c1tx_func_t c1tx_inv_func_array[C1_TX1_TYPE_CNT] = {           //
     c1tx__iden_8, c1tx__iden_16, c1tx__iden_32};
 
 // 1D size - cos bit mapping. see [libaom]/encoder/av1_fwd_txfm2d.c
-const int8_t c1tx_cos_bit_col[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT] = {
+const uint8_t c1tx_cos_bit_col[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT] = {
     {13, 0, 0, 0},
     {0, 13, 0, 0},
     {0, 0, 12, 0},
     {0, 0, 0, 13},
 };
-const int8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT] = {
+const uint8_t c1tx_cos_bit_row[C1_TX1_SIZE_CNT][C1_TX1_SIZE_CNT] = {
     {13, 0, 0, 0},
     {0, 12, 0, 0},
     {0, 0, 12, 0},
@@ -226,8 +226,8 @@ int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt) {
 
     // requires temporary arrays of max(tx_size_row/col) int32's
     // int32_t temp_in[64], temp_out[64];
-    const int temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
-    const int buf_size = opt->txsize_col * opt->txsize_row * sizeof(int32_t);
+    const uint32_t temp_size = c1__max(opt->txsize_col, opt->txsize_row) * sizeof(int32_t);
+    const uint32_t buf_size = opt->txsize_col * opt->txsize_row * sizeof(int32_t);
     int32_t *temp_in = c1_mpool_alloc_def(temp_size);
     int32_t *temp_out = c1_mpool_alloc_def(temp_size);
     int32_t *buf = c1_mpool_alloc_def(buf_size);
@@ -262,7 +262,7 @@ int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt) {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
                 // suppose bitdepth is 8bit, clamps to 255
                 int16_t *out = output + row * opt->txsize_col + col;
-                *out = c1tx__clamp64((int64_t)*out + temp_out[row], 0, 255);
+                *out = (int16_t)c1tx__clamp64((int64_t)*out + temp_out[row], 0, 255);
             }
         } // </flip?>
     } // </col_tx>
