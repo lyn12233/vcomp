@@ -109,7 +109,8 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 typedef struct {
     uint8_t mask;
     int32_t r, d;
-    int32_t sse, sad;
+    float sse;
+    uint32_t sad;
     float fitness;
 } c1enc_rdstat_t;
 
@@ -232,6 +233,7 @@ struct c1enc_partition_s {
     uint8_t y, x;
     uint16_t sb_y, sb_x;
     uint16_t buf_offs; // offset in buf provided by super block, per int16_t*3
+    c1enc_super_block_t *sb;
 
     c1enc_block_t *b;
     struct c1enc_partition_s *parts[4];
@@ -258,6 +260,9 @@ static int c1_pred_is_intra(C1_PRED_MODE mode) {
 }
 static int16_t c1_abs_dif_i16(int16_t a, int16_t b) {
     return a > b ? a - b : b - a;
+}
+static int64_t c1_clamp64(int64_t a, int64_t min_, int64_t max_) {
+    return a < min_ ? min_ : a > max_ ? max_ : a;
 }
 
 #define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))

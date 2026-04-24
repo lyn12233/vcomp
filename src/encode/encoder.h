@@ -11,6 +11,8 @@ extern "C" {
 
 #include <stdio.h>
 
+extern c1_mpool_t c1enc_part_pool;
+
 // to init a frame, assign {0} then update it.
 /** update or init a frame struct
  behaviors:

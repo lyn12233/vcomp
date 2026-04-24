@@ -14,10 +14,14 @@ extern "C" {
  if a and b do not have overlapping matrices, return 0.
 */
 int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
+/** merge rdstat
+ */
+c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
 /** bubble-sort new cand into block's candidate array, maintain its order.
  */
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat);
 int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, const c1enc_rdstat_t *stat);
+int c1enc_part_gather_rdstat(c1enc_partition_t *p, int depth);
 
 // --- search options ---
 // a all-in-one option struct
@@ -25,16 +29,24 @@ typedef struct {
     // block level
     // - inter search option
     // - intra search option
-    uint8_t intra_try_uv;        // try a different prediction mode for uv channels
-    uint8_t intra_try_cfl;       // try chroma-from-luma. try_cfl and try_uv should not be both set
-    C1_PRED_MODE intra_rng_max;  // max intra mode (excluded) to search
+    uint8_t intra_try_uv;       // try a different prediction mode for uv channels
+    uint8_t intra_try_cfl;      // try chroma-from-luma. try_cfl and try_uv should not be both set
+    C1_PRED_MODE intra_rng_max; // max intra mode (excluded) to search
 } c1enc_search_option_t;
 
-/** search intra mode at block level.
+/** search intra mode at block level. for options see c1enc_search_option_t
  measures by sad.
 */
-int c1enc_search_intra_b(c1enc_block_t *b,const c1_pixbuf_t*pix, const c1enc_search_option_t *opt);
-int c1enc_search_merge(c1enc_partition_t *part);
+int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt);
+/** try merge to a partition node based on pred search result.
+ merge occurs only when: (1) current partition is the last one, relating to 4 blocks. (2) for merge as intra mode, intra
+ cands' sads are smooth and none is much worse than inter cands. (3) for merge as inter mode, vice versa. (4) search
+ block partition mode at current level, result sad is not much worse than current partition.
+ this process adds a pseudo block_t to current partition. case merge is determined, child partitions are cleaned ozrwis
+ this block is cleaned.
+ @return negative if parms are invalid. a failed merge is not an error.
+*/
+int c1enc_search_merge(c1enc_partition_t *p,const c1_pixbuf_t*pix, const c1enc_search_option_t *opt);
 
 #ifdef __cplusplus
 }

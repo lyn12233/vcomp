@@ -9,12 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define C1_ENC_PART_POOLNB 50
-#define C1_ENC_BLK_POOLNB 18
+#define C1_ENC_PART_POOLNB (4088 / sizeof(c1enc_partition_t) - 1)
 
 // this is the pool context to store all macro blocks
-static c1_mpool_t c1enc__part_pool = {C1_ROUND_UP(sizeof(c1enc_partition_t), 8) * 8, C1_ENC_PART_POOLNB, NULL};
-static c1_mpool_t c1enc__blk_pool = {C1_ROUND_UP(sizeof(c1enc_block_t), 8) * 8, C1_ENC_BLK_POOLNB, NULL};
+c1_mpool_t c1enc_part_pool = {C1_ROUND_UP(sizeof(c1enc_partition_t), 8) * 8, C1_ENC_PART_POOLNB, NULL};
 
 static void c1__print_ind(FILE *f, int ind) {
     for (int i = 0; i < ind; i += 4)
@@ -123,7 +121,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y,
 
     if (!sb->root) {
         // create a mb tree
-        sb->root = c1_mpool_alloc(&c1enc__part_pool);
+        sb->root = c1_mpool_alloc(&c1enc_part_pool);
         assert_fatal(sb->root);
         *sb->root = (c1enc_partition_t){0};
     }
@@ -133,7 +131,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, int sb_y,
 int c1enc_sb_clear(c1enc_super_block_t *sb) {
     int res;
     if ((res = c1enc_partition_clear(sb->root)) < 0 || //
-        (res = c1_mpool_dealloc(&c1enc__part_pool, sb->root)) < 0)
+        (res = c1_mpool_dealloc(&c1enc_part_pool, sb->root)) < 0)
         return res;
     return 0;
 }
@@ -177,6 +175,7 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
     part->is_all_intra = 0;
     part->y = y, part->x = x, part->sb_y = sb_y, part->sb_x = sb_x;
     part->buf_offs = buf_offs;
+    part->sb = sb;
 
     // 3. case init, init a 64x64...8x8 partition by default
     if (part->is_partition /*wont met but for robustness*/ && part->parts[0] == NULL || //
@@ -186,7 +185,7 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
         if (size == C1_SZ_8_8) {
             // terminal size, init block
             part->is_partition = 0;
-            part->b = c1_mpool_alloc(&c1enc__blk_pool);
+            part->b = malloc(sizeof(c1enc_block_t));
             *part->b = (c1enc_block_t){0};
             c1enc_block_update(part->b, sb, size, y, x, sb_y, sb_x, buf_offs);
         } else {
@@ -203,7 +202,7 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
 
             part->is_partition = 1;
             for (int i = 0; i < 4; i++) {
-                part->parts[i] = c1_mpool_alloc(&c1enc__part_pool);
+                part->parts[i] = c1_mpool_alloc(&c1enc_part_pool);
                 assert_fatal(part->parts[i]);
                 *part->parts[i] = (c1enc_partition_t){0};
                 c1enc_partition_update(part->parts[i], sb, new_sz,                 //
@@ -215,19 +214,17 @@ int c1enc_partition_update(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_
     return 0;
 }
 int c1enc_partition_clear(c1enc_partition_t *part) {
-    if (part->is_partition) {
-        for (int i = 0; i < 4; i++) {
-            if (part->parts[i]) {
-                c1enc_partition_clear(part->parts[i]);
-                c1_mpool_dealloc(&c1enc__part_pool, part->parts[i]);
-            }
-        }
-    } else {
-        if (part->b) {
-            c1enc_block_clear(part->b);
-            c1_mpool_dealloc(&c1enc__blk_pool, part->b);
+    for (int i = 0; i < 4; i++) {
+        if (part->parts[i]) {
+            c1enc_partition_clear(part->parts[i]);
+            c1_mpool_dealloc(&c1enc_part_pool, part->parts[i]);
         }
     }
+    if (part->b) {
+        c1enc_block_clear(part->b);
+        free(part->b);
+    }
+
     *part = (c1enc_partition_t){0};
     return 0;
 }
