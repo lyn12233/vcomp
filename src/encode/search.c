@@ -8,6 +8,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <string.h>
 
 #define C1__UVMODE_SING_SRCH_CNT 4
 #define C1__WORSE_MODE_ACCEPTABLE_SCALE 3 / 2 // no parenthesis. mult then div by 2**n
@@ -259,6 +260,87 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
     } // try different uv mode
     return 0;
 }
+/** search inter mode per block per step in a diamond search pattern
+ @param step_0 the biggest step, is power of 2
+ @param step_cur the current diamond search initial step, power of 2
+ @param matrices persistent assessment of fitness of each mvs relative to y0,x0.
+ of logical size (step_0*2+1)^2, with y0,x0 at index (step_0,step_0). matrices is measured by sad but
+ is not true sad. it may add a distance smoothing and may be sub sampled sad.
+*/
+static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt, //
+                                     uint8_t step_0, uint8_t step_cur, int32_t *matrices) {
+
+    // short alias of vars
+    uint8_t step = step_cur;
+    const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
+
+    // init search info
+    c1enc_mv_t c = {y0, x0};                           // mv search center
+    c1enc_mv_t d1 = {step, 0};                         // d1 d2 the 2 directions to search, 4 points
+    c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW}; // common predict option
+
+    while (step > 0) {
+        c1enc_mv_t d2 = {0 - d1.x, d1.y}; // d2 is always ortho to d1. this step may not be opt by compiler?
+        const c1enc_mv_t mvs[4] = {
+            // 4 motion vectors to search in a diamond, relative to 0,0
+            {c.y + d1.y, c.x + d1.x},
+            {c.y - d1.y, c.x - d1.x},
+            {c.y + d2.y, c.x + d2.x},
+            {c.y - d2.y, c.x - d2.x},
+        };
+        uint16_t idxs[4];       // candidate indices in "matrices"
+        uint8_t has_new_mv = 0; // tells that if all mvs are searched twice, no need to further
+
+        for (int cand = 0; cand < 4; cand++) {
+            // deduce corresponding index in matrices
+            const uint16_t m_i = mvs[cand].y - y0 + step_0, m_j = mvs[cand].x - x0 + step_0;
+            idxs[cand] = m_i * (step_0 * 2 + 1) + m_j;
+
+            if (matrices[idxs[cand]] >= 0) // searched twice, skip
+                continue;
+
+            // prepare prediction
+            has_new_mv = 1;
+            matrices[idxs[cand]] = 0;
+            pred_opt.mv = mvs[cand]; // out-of-bound is handled by c1pd_predict
+
+            for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.ci = ci;
+                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                // cumulate sad of yuv planes. considering sub sampling.
+                if (opt->inter_sad_subsamp_mask & step_cur) {
+                    matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
+                } else {
+                    matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
+                }
+            }
+            // apply distance smoothing
+            matrices[idxs[cand]] += opt->inter_smooth_lambda
+                                  * (                                    //
+                                        c1_abs_dif_i16(mvs[cand].y, 0)   //
+                                        + c1_abs_dif_i16(mvs[cand].x, 0) //
+                                        )
+                                  / 4;
+        }
+        if (!has_new_mv)
+            break;
+        // determine new search diamond
+        // try flip d1 and d2, make +d1 +d2 best direction (less abs diff)
+        if (matrices[idxs[1]] <= matrices[idxs[0]]) {
+            d1 = (c1enc_mv_t){0 - d1.y, 0 - d1.x};
+        }
+        if (matrices[idxs[3] <= matrices[idxs[2]]]) {
+            d2 = (c1enc_mv_t){0 - d2.y, 0 - d2.x};
+        }
+        // update search inf
+        c = (c1enc_mv_t){c.y + (d1.y + d2.y) / 2, c.x + (d1.x + d2.x) / 2};
+        d1 = (c1enc_mv_t){(d1.y - d2.y) / 2, (d1.x - d2.x) / 2};
+        d2 = (c1enc_mv_t){(d1.y + d2.y) / 2, (d1.x + d2.x) / 2};
+        step /= 2;
+    }
+    return 0;
+}
+
 int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
     if (!p->is_partition)
         return 0;
