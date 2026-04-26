@@ -155,7 +155,7 @@ struct c1enc_super_block_s {
     int32_t coef_buf[64 * 64 * 3];
     int32_t qcoef_buf[64 * 64 * 3];
 
-    uint16_t sb_y, sb_x;     // super block is at y row and x col in frame
+    uint16_t sb_y, sb_x; // super block is at y row and x col in frame
 
     int8_t q_index_delta;
 
@@ -256,10 +256,16 @@ static int c1_pred_is_inter(C1_PRED_MODE mode) {
 static int c1_pred_is_intra(C1_PRED_MODE mode) {
     return mode >= C1_PRED_DC && mode <= C1_PRED_PAETH;
 }
+static int16_t c1_abs_i16(int16_t a) {
+    return a > 0 ? a : 0 - a;
+}
 static int16_t c1_abs_dif_i16(int16_t a, int16_t b) {
     return a > b ? a - b : b - a;
 }
 static int64_t c1_clamp64(int64_t a, int64_t min_, int64_t max_) {
+    return a < min_ ? min_ : a > max_ ? max_ : a;
+}
+static int16_t c1_clamp16(int16_t a, int16_t min_, int16_t max_) {
     return a < min_ ? min_ : a > max_ ? max_ : a;
 }
 

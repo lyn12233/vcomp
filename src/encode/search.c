@@ -11,8 +11,9 @@
 #include <string.h>
 
 #define C1__UVMODE_SING_SRCH_CNT 4
-#define C1__WORSE_MODE_ACCEPTABLE_SCALE 3 / 2 // no parenthesis. mult then div by 2**n
+#define C1__WORSE_MODE_ACCEPTABLE_SCALE 3 / 2 // note: this is not evaluated as zero
 #define C1__MERGE_THRE_SAD_DIF_SCALE 3 / 4
+#define C1__INTER_STEP_0_MAX 64
 
 static int c1enc__cmp(uint32_t a, uint32_t b) {
     return (a > b) - (a < b);
@@ -32,9 +33,36 @@ static uint32_t c1enc__calc_p_sad(const c1enc_block_t *b, const c1_pixbuf_t *pix
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++) {
-            res += (uint16_t)c1_abs_dif_i16(                 //
+            res += c1_abs_dif_i16(                           //
                 *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j), //
                 b->p[opt->ci].diff[i * bw + j]               //
+            );
+        }
+    }
+    c1_pixbuf_clear(&ci_pix);
+    return res;
+}
+/** calculate sum of asbolute difference of a plane(p) with 2x2 sub sampling
+ assumes pix hgt and wid are even, which always holds bec frame is 64 pix aligned.
+ @param pix c3i16
+*/
+static uint32_t c1enc__calc_p_sad_subsamp(const c1enc_block_t *b, const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+    uint32_t res = 0;
+    c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
+    for (int i = 0; i < bh; i += 2) {
+        for (int j = 0; j < bw; j += 2) {
+            res += c1_abs_dif_i16(                                    //
+                *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j)           //
+                    + *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j + 1) //
+                    + *c1_pixbuf_geti16c(&ci_pix, by + i + 1, bx + j)
+                    + *c1_pixbuf_geti16c(&ci_pix, by + i + 1, bx + j + 1), //
+                b->p[opt->ci].diff[i * bw + j]                             //
+                    + b->p[opt->ci].diff[i * bw + j + 1]                   //
+                    + b->p[opt->ci].diff[(i + 1) * bw + j]                 //
+                    + b->p[opt->ci].diff[(i + 1) * bw + j + 1]             //
             );
         }
     }
@@ -103,10 +131,34 @@ c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t 
     };
 }
 
+int c1enc_mi_intra_eq(const c1enc_mi_intra_t *a, const c1enc_mi_intra_t *b) {
+    if (a->mode_y != b->mode_y || (a->use_cfl != b->use_cfl))
+        return 0;
+    if (a->use_cfl) {
+        return a->cfl_alpha_u == b->cfl_alpha_u && a->cfl_alpha_v == b->cfl_alpha_v;
+    } else {
+        return a->mode_uv == b->mode_uv;
+    }
+}
+int c1enc_mi_inter_eq(const c1enc_mi_inter_t *a, const c1enc_mi_inter_t *b) {
+    if (a->mode != b->mode || a->ref_frame != b->ref_frame)
+        return 0;
+    if (a->mode == C1_PRED_MVNEW) {
+        return a->mv.y == b->mv.y && a->mv.x == b->mv.x;
+    } else {
+        return a->mvd.y == b->mvd.y && a->mvd.x == b->mvd.x;
+    }
+}
+
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat) {
     c1enc_rdstat_t *stats = b->intra_cand_stats;
     c1enc_mi_intra_t *cands = b->intra_cands;
     const uint8_t nbcand = b->intra_cand_cnt;
+
+    for (int i = 0; i < nbcand; i++) {
+        if (c1enc_mi_intra_eq(mi, cands + i))
+            return 0;
+    }
 
     // nbcand<=CAND_CNT and the arrays contain CAND_CNT+1 slots
     stats[nbcand] = *stat, cands[nbcand] = *mi;
@@ -126,6 +178,11 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
     c1enc_rdstat_t *stats = b->inter_cand_stats;
     c1enc_mi_inter_t *cands = b->inter_cands;
     const int nbcand = b->inter_cand_cnt;
+
+    for (int i = 0; i < nbcand; i++) {
+        if (c1enc_mi_inter_eq(mi, cands + i))
+            return 0;
+    }
 
     // nbcand<=CAND_CNT and the arrays contain CAND_CNT+1 slots
     stats[nbcand] = *stat, cands[nbcand] = *mi;
@@ -266,9 +323,10 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
  @param matrices persistent assessment of fitness of each mvs relative to y0,x0.
  of logical size (step_0*2+1)^2, with y0,x0 at index (step_0,step_0). matrices is measured by sad but
  is not true sad. it may add a distance smoothing and may be sub sampled sad.
+ matrices are initialized with 0xff bytes, which is UINT32_MAX
 */
 static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt, //
-                                     uint8_t step_0, uint8_t step_cur, int32_t *matrices) {
+                                     uint8_t step_0, uint8_t step_cur, uint32_t *matrices) {
 
     // short alias of vars
     uint8_t step = step_cur;
@@ -296,8 +354,11 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
             const uint16_t m_i = mvs[cand].y - y0 + step_0, m_j = mvs[cand].x - x0 + step_0;
             idxs[cand] = m_i * (step_0 * 2 + 1) + m_j;
 
-            if (matrices[idxs[cand]] >= 0) // searched twice, skip
+            if (matrices[idxs[cand]] != 0xffffffff) // searched twice, skip
                 continue;
+
+            // cartesian distance to 0,0 used for subsampling and smoothing
+            const uint8_t dist = (uint8_t)c1_clamp16(c1_abs_i16(mvs[cand].y) + c1_abs_i16(mvs[cand].x), 0, 255);
 
             // prepare prediction
             has_new_mv = 1;
@@ -308,19 +369,14 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
                 pred_opt.ci = ci;
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
                 // cumulate sad of yuv planes. considering sub sampling.
-                if (opt->inter_sad_subsamp_mask & step_cur) {
+                if (opt->inter_sad_subsamp_mask & dist) {
                     matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
                 } else {
-                    matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
+                    matrices[idxs[cand]] += c1enc__calc_p_sad_subsamp(b, pix, &pred_opt);
                 }
             }
             // apply distance smoothing
-            matrices[idxs[cand]] += opt->inter_smooth_lambda
-                                  * (                                    //
-                                        c1_abs_dif_i16(mvs[cand].y, 0)   //
-                                        + c1_abs_dif_i16(mvs[cand].x, 0) //
-                                        )
-                                  / 4;
+            matrices[idxs[cand]] += opt->inter_smooth_lambda * dist / 4;
         }
         if (!has_new_mv)
             break;
@@ -338,6 +394,75 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
         d2 = (c1enc_mv_t){(d1.y + d2.y) / 2, (d1.x + d2.x) / 2};
         step /= 2;
     }
+    return 0;
+}
+
+int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
+    // alias
+    const uint8_t nbcand = opt->inter_newcand_cnt;
+    const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
+    // get step_0
+    uint8_t step_0 = C1__INTER_STEP_0_MAX;
+    while (!(opt->inter_init_steps_mask & step_0) && step_0)
+        step_0 /= 2;
+    if (!step_0)
+        return 0;
+    // prepare search matrix record
+    uint16_t matrix_nb = (step_0 * 2 + 1) * (step_0 * 2 + 1);
+    uint32_t *matrices = malloc(matrix_nb * sizeof(uint32_t) + //
+                                (nbcand + 1) * sizeof(c1enc_mv_t) + (nbcand + 1) * sizeof(uint32_t));
+    assert_fatal(matrices);
+    memset(matrices, 0xff, matrix_nb * sizeof(int32_t));
+
+    uint8_t step_cur = step_0;
+    while (step_cur) {
+        if (opt->inter_init_steps_mask & step_cur)
+            c1enc_search_inter_b_step(b, pix, opt, step_0, step_cur, matrices);
+        step_cur /= 2;
+    }
+
+    // add certain number of candidates. search in matrices first, ordered by these matrices
+    c1enc_mv_t *mvs = (void *)(matrices + matrix_nb);
+    uint32_t *ms = (void *)(mvs + nbcand + 1);
+    memset(mvs, 0, (matrix_nb + 1) * sizeof(c1enc_mv_t));
+    for (int16_t y = -step_0 + y0; y <= step_0 + y0; y++) {
+        for (int16_t x = -step_0 + x0; x <= step_0 + x0; x++) {
+            const uint16_t m_i = y - y0 + step_0, m_j = x - x0 + step_0;
+            const uint16_t m_idx = m_i * (step_0 * 2 + 1) + m_j;
+            for (int i = nbcand; i >= 1; i--) {
+                if (matrices[m_idx] < ms[i - 1]) {
+                    ms[i] = ms[i - 1], mvs[i] = mvs[i - 1];
+                    ms[i - 1] = matrices[m_idx], mvs[i - 1] = (c1enc_mv_t){y, x};
+                } else
+                    break;
+            } // sort
+        } // x iter
+    } // y iter
+    for (int i = 0; i < nbcand; i++) {
+        if (ms[i] != 0xffffffff) {
+            // gather stat: if sad
+            c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
+            const uint8_t dist = (uint8_t)c1_clamp16(c1_abs_i16(mvs[i].y) + c1_abs_i16(mvs[i].x), 0, 255);
+            if (opt->inter_sad_subsamp_mask & dist) {
+                // recalc sad
+                c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW, 0, 0, mvs[i]};
+                stat.sad = 0;
+                for (uint8_t ci = 0; ci < 3; ci++) {
+                    c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                    stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
+                }
+            } else {
+                // inverse sad from matrix
+                stat.sad = ms[i] - opt->inter_smooth_lambda * dist / 4;
+            }
+            // gather mode info
+            c1enc_mi_inter_t mi = {C1_PRED_MVNEW, 0, mvs[i], 0};
+            // add cand to block
+            c1enc_block_add_inter_cand(b, &mi, &stat);
+        } else
+            break;
+    }
+
     return 0;
 }
 
