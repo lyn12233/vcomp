@@ -52,8 +52,8 @@ static uint32_t c1enc__calc_p_sad_subsamp(const c1enc_block_t *b, const c1_pixbu
     const int bx = (int)b->sb_x * 64 + b->xoff;
     uint32_t res = 0;
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
-    for (int i = 0; i < bh; i += 2) {
-        for (int j = 0; j < bw; j += 2) {
+    for (int i = 0; i < bh - 1; i += 2) {
+        for (int j = 0; j < bw - 1; j += 2) {
             res += c1_abs_dif_i16(                                    //
                 *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j)           //
                     + *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j + 1) //
@@ -81,6 +81,7 @@ static int c1enc__is_mode_better(const c1enc_rdstat_t *a, const c1enc_rdstat_t *
     if (a[0].mask & b[0].mask & C1_RD_SAD_BIT) {
         return a[0].sad > b[0].sad * C1__WORSE_MODE_ACCEPTABLE_SCALE;
     } else {
+        warning("no overlapping matrices");
         return 0;
     }
 }
@@ -386,7 +387,7 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
         if (matrices[idxs[1]] <= matrices[idxs[0]]) {
             d1 = (c1enc_mv_t){0 - d1.y, 0 - d1.x};
         }
-        if (matrices[idxs[3] <= matrices[idxs[2]]]) {
+        if (matrices[idxs[3]] <= matrices[idxs[2]]) {
             d2 = (c1enc_mv_t){0 - d2.y, 0 - d2.x};
         }
         // update search inf
@@ -410,7 +411,7 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     if (!step_0)
         return 0;
     // prepare search matrix record
-    uint16_t matrix_nb = (step_0 * 2 + 1) * (step_0 * 2 + 1);
+    uint32_t matrix_nb = (step_0 * 2 + 1) * (step_0 * 2 + 1);
     uint32_t *matrices = malloc(matrix_nb * sizeof(uint32_t) + //
                                 (nbcand + 1) * sizeof(c1enc_mv_t) + (nbcand + 1) * sizeof(uint32_t));
     assert_fatal(matrices);
@@ -476,8 +477,8 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
         if (p->parts[i]->is_partition)
             return 0;
     }
-    int32_t m_intra[4], m_inter[4]; // matrices, currently abs dif.
-    uint8_t try_inter = opt->try_inter, try_intra = opt->try_intra;// search switch
+    int32_t m_intra[4], m_inter[4];                                 // matrices, currently abs dif.
+    uint8_t try_inter = opt->try_inter, try_intra = opt->try_intra; // search switch
     // sum of part stats to cmp with merge stat
     c1enc_rdstat_t part_stat_intra = {C1_RD_SAD_BIT}, part_stat_inter = {C1_RD_SAD_BIT};
     for (int i = 0; i < 4; i++) {

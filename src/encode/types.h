@@ -188,7 +188,6 @@ typedef struct {
 } c1enc_mi_inter_t;
 
 struct c1enc_block_s {
-    C1_PRED_TYPE pred_type;
     C1_2D_SZ size;
 
     // attrs necessary to collect above and left pixels
@@ -202,16 +201,15 @@ struct c1enc_block_s {
     // uint8_t wid_per_tx, hgt_per_tx;
     C1_2D_SZ tx_size;
     C1_TX_2D_TYPE tx_type;
-
-    uint8_t intra_cand_cnt;
-    uint8_t inter_cand_cnt;
-
-    union {
-        // intra mode info
-        c1enc_mi_intra_t mi_intra;
-        // inter mode info
-        c1enc_mi_inter_t mi_inter;
-    };
+    
+    // predict mode search candidates
+    
+    uint8_t intra_cand_cnt; //count in intra_cand
+    uint8_t inter_cand_cnt;// count in inter_cand
+    
+    uint8_t pred_type_determined ; // init as 0
+    C1_PRED_TYPE pred_type; // only gathered by some func to avd redundant cand check
+    // best cand is stored in intra_cands or inter_cands
 
     c1enc_plane_t p[3]; // planes
 
