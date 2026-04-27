@@ -325,7 +325,8 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
  is not true sad. it may add a distance smoothing and may be sub sampled sad.
  matrices are initialized with 0xff bytes, which is UINT32_MAX
 */
-static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt, //
+static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                                     const c1enc_search_option_t *opt,                                 //
                                      uint8_t step_0, uint8_t step_cur, uint32_t *matrices) {
 
     // short alias of vars
@@ -367,7 +368,7 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
 
             for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
-                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                c1pd_predict(b, b->p[ci].diff, ctx->ref_frames + opt->inter_ref_idx, &pred_opt, NULL);
                 // cumulate sad of yuv planes. considering sub sampling.
                 if (opt->inter_sad_subsamp_mask & dist) {
                     matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
@@ -397,7 +398,8 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
     return 0;
 }
 
-int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
+int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                         const c1enc_search_option_t *opt) {
     // alias
     const uint8_t nbcand = opt->inter_newcand_cnt;
     const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
@@ -417,7 +419,7 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
     uint8_t step_cur = step_0;
     while (step_cur) {
         if (opt->inter_init_steps_mask & step_cur)
-            c1enc_search_inter_b_step(b, pix, opt, step_0, step_cur, matrices);
+            c1enc_search_inter_b_step(b, pix, ctx, opt, step_0, step_cur, matrices);
         step_cur /= 2;
     }
 
@@ -448,7 +450,7 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
                 c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW, 0, 0, mvs[i]};
                 stat.sad = 0;
                 for (uint8_t ci = 0; ci < 3; ci++) {
-                    c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                    c1pd_predict(b, b->p[ci].diff, ctx->ref_frames + opt->inter_ref_idx, &pred_opt, NULL);
                     stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
                 }
             } else {
@@ -466,15 +468,17 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
     return 0;
 }
 
-int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
+int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                       const c1enc_search_option_t *opt) {
     if (!p->is_partition)
         return 0;
     for (int i = 0; i < 4; i++) {
         if (p->parts[i]->is_partition)
             return 0;
     }
-    int32_t m_intra[4], m_inter[4]; // matrices, currently sad.
-    int try_inter = 1, try_intra = 1;
+    int32_t m_intra[4], m_inter[4]; // matrices, currently abs dif.
+    uint8_t try_inter = opt->try_inter, try_intra = opt->try_intra;// search switch
+    // sum of part stats to cmp with merge stat
     c1enc_rdstat_t part_stat_intra = {C1_RD_SAD_BIT}, part_stat_inter = {C1_RD_SAD_BIT};
     for (int i = 0; i < 4; i++) {
         const c1enc_block_t *b = p->parts[i]->b;
@@ -511,8 +515,7 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
         c1enc_search_intra_b(p->b, pix, opt);
     }
     if (try_inter) {
-        // unimpl
-        assert_fatal(try_inter == 0);
+        c1enc_search_inter_b(p->b, pix, ctx, opt);
     }
     // in case SAD not available, merge is cancelled. not robust?
     int can_merge = (try_intra && p->b->intra_cand_cnt

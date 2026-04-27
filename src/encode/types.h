@@ -106,6 +106,9 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 #define C1_RD_SSE_BIT (1 << 2)
 #define C1_RD_SAD_BIT (1 << 3)
 #define C1_RD_FIT_BIT (1 << 4)
+/** compound rdstat information. existing statistics are indicated by "mask"
+ currently only sad(sum of absolute difference) is considered, as it is the simplest.
+*/
 typedef struct {
     uint8_t mask;
     uint32_t r, d;
@@ -119,9 +122,8 @@ typedef struct {
 struct c1enc_ctx_s {
     c1_pixbuf_t ref_frames[16];
     uint8_t avail_ref_cnt;
-    struct {
-    } profile;
 };
+typedef struct c1enc_ctx_s c1enc_ctx_t;
 
 // -- frame, super block, partition and block ---
 

@@ -42,12 +42,15 @@ int c1enc_part_gather_rdstat(c1enc_partition_t *p, int depth);
 typedef struct {
     // block level
     // - inter search option
+    uint8_t try_inter;              // inter searrch switch
     uint8_t inter_y0, inter_x0;     // mv search initial mv
     uint8_t inter_init_steps_mask;  // mask 0..6 bit is the step size, 1..64
     uint8_t inter_sad_subsamp_mask; // 2x2 subsample mask, e.g. [msb] 1...10...0. index to this mask is abs(x)+abs(y)
     uint8_t inter_smooth_lambda;    // m = (sad|sad_subsamp) + lambda*(abs(x)+abs(y))/4
     uint8_t inter_newcand_cnt;      // new candidates from search result to add to block's inter cands
+    uint8_t inter_ref_idx;          // index of ref frame in encoder context
     // - intra search option
+    uint8_t try_intra;          // intra search switch
     uint8_t intra_try_uv;       // try a different prediction mode for uv channels
     uint8_t intra_try_cfl;      // try chroma-from-luma. try_cfl and try_uv should not be both set
     C1_PRED_MODE intra_rng_max; // max intra mode (excluded) to search
@@ -58,13 +61,15 @@ typedef struct {
  @param b target block
  @param pix c3i16 pixels buf of the current frame.
 */
-int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt);
+int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, //
+                         const c1enc_search_option_t *opt);
 
 /** search inter mv at block level. measures abs diff.
  @param b target block
  @param pix c3i16 pixels buf of the current frame.
  */
-int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt);
+int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                         const c1enc_search_option_t *opt);
 
 /** gather adjacent motion vectors
  */
@@ -77,7 +82,8 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
  this block is cleaned.
  @return negative if parms are invalid. a failed merge is not an error.
 */
-int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt);
+int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                       const c1enc_search_option_t *opt);
 
 #ifdef __cplusplus
 }
