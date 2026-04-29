@@ -115,7 +115,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
         // init, create a mb tree
         assert_fatal((sb->root = c1_mpool_alloc(&c1enc_part_pool)));
         *sb->root = (c1enc_partition_t){0};
-        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, 0, 0, sb_y, sb_x, 0);
+        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, C1_SZ_16_16, 0, 0, sb_y, sb_x, 0);
     } else {
         c1enc_partition_reset_cands(sb->root);
         // case init, cand cnt is 0, no need to reset
@@ -156,8 +156,8 @@ int c1enc_sb_pass0();
 int c1enc_sb_pass1();
 int c1enc_sb_pass2();
 
-int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
-                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
+int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, C1_2D_SZ targ_size, //
+                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                                  //
                          uint16_t buf_offs) {
     // 0. case size change
     // note init means {0}, which may or may not effect
@@ -176,7 +176,7 @@ int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D
         !part->is_partition && part->b == NULL) {
         assert_fatal(size <= C1_SZ_64_64 && "unimpl size");
 
-        if (size == C1_SZ_8_8) {
+        if (size <= targ_size) {
             // terminal size, init block
             part->is_partition = 0;
             assert_fatal(!part->b && (part->b = malloc(sizeof(c1enc_block_t))));
@@ -184,9 +184,9 @@ int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D
             c1enc_block_update(part->b, sb, size, y, x, sb_y, sb_x, buf_offs);
         } else {
             // partition by 4: tl,tr,bl,br
-            uint8_t new_hgt = c1_sz2hgt(size) / 2;
-            uint8_t new_wid = c1_sz2wid(size) / 2;
             C1_2D_SZ new_sz = size - 1;
+            uint8_t new_hgt = c1_sz2hgt(new_sz);
+            uint8_t new_wid = c1_sz2wid(new_sz);
             const uint8_t offs[4][2] = {
                 {0, 0},
                 {0, new_wid},
@@ -198,7 +198,7 @@ int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D
             for (uint8_t i = 0; i < 4; i++) {
                 assert_fatal(!part->parts[i] && (part->parts[i] = c1_mpool_alloc(&c1enc_part_pool)));
                 *part->parts[i] = (c1enc_partition_t){0};
-                c1enc_partition_init(part->parts[i], sb, new_sz,                 //
+                c1enc_partition_init(part->parts[i], sb, new_sz, targ_size,      //
                                      y + offs[i][0], x + offs[i][1], sb_y, sb_x, //
                                      buf_offs + i * new_hgt * new_wid);
             }

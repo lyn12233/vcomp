@@ -54,7 +54,26 @@ typedef struct {
     uint8_t intra_try_uv;       // try a different prediction mode for uv channels
     uint8_t intra_try_cfl;      // try chroma-from-luma. try_cfl and try_uv should not be both set
     C1_PRED_MODE intra_rng_max; // max intra mode (excluded) to search
+    // partition level
+    // - merging/dividing option
+    // -- to tell if mode(intra/inter) is obviously better than another: loss1<((loss2*mult)>>shift)
+    //    this counts for if a merge ofspecific mode is decided
+    uint8_t thre_mode_better_mult;  // e.g. 3
+    uint8_t thre_mode_better_shift; // e.g. 1
+    // -- to tell if matrices(SAD) of 4 partitions are not obviously different: min_>=((max_*mult)>>shift)
+    //    this counts for if a merge ofspecific mode is decided
+    uint8_t thre_mat_is_dif_mult;  // e.g. 3
+    uint8_t thre_mat_is_dif_shift; // e.g. 2
+    uint8_t part_divide_recurse;
+    // superblock level
+    // - palette option
+    uint8_t try_palette;
+    // misc
+    // - max SAD of a block, may be fixed fraction of frame
+    uint32_t thre_sad_max_b;
 } c1enc_search_option_t;
+
+// --- pred mode search functions ---
 
 /** search intra mode at block level. for options see c1enc_search_option_t
  measures by abs diff(sad).
@@ -70,21 +89,50 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, //
  */
 int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                          const c1enc_search_option_t *opt);
+static int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                          const c1enc_search_option_t *opt) {
+    int r = 0;
+    if (opt->try_intra)
+        r = c1enc_search_intra_b(b, pix, opt);
+    if (r >= 0 && opt->try_inter)
+        r = c1enc_search_inter_b(b, pix, ctx, opt);
+    return r;
+}
+static int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                          const c1enc_search_option_t *opt) {
+    int r = 0;
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            if ((r = c1enc_search_p(p->parts[i], pix, ctx, opt)) < 0)
+                return r;
+        }
+    } else {
+        if ((r = c1enc_search_b(p->b, pix, ctx, opt)) < 0)
+            return r;
+    }
+    return r;
+}
 
-/** gather adjacent motion vectors
- */
+// --- search partition decisions ---
 
 /** try merge to a partition node based on pred search result.
  merge occurs only when: (1) current partition is the last one, relating to 4 blocks. (2) for merge as intra mode, intra
- cands' sads are smooth and none is much worse than inter cands. (3) for merge as inter mode, vice versa. (4) search
- block partition mode at current level, result sad is not much worse than current partition.
- this process adds a pseudo block_t to current partition. case merge is determined, child partitions are cleaned ozrwis
- this block is cleaned.
- @return negative if parms are invalid. a failed merge is not an error.
+ cands' sads are smooth and none is much worse than inter cands, and sum of SADs do not exceed certain fraction. (3) for
+ merge as inter mode, vice versa. (4) search block partition mode at current level, result sad is not much worse than
+ current partition. this process adds a pseudo block_t to current partition. case merge is determined, child partitions
+ are cleaned ozrwis this block is cleaned.
+ note: search merge is done recursively and depth-first(from bottom).
+ @param p top partition instance to try merge
+ @return negative for error. a failed merge is not an error.
 */
 int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                        const c1enc_search_option_t *opt);
-
+/** try divide a block(terminal partition) into 4 partitions. occurs when SAD exceeds certain fraction. 
+ note: search divide is done recursively and depth-first(from top), up to 8x8
+ @param p top partition instance to try divide
+ */
+int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                        const c1enc_search_option_t *opt);
 #ifdef __cplusplus
 }
 #endif

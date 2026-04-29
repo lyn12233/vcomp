@@ -49,8 +49,8 @@ int c1enc_sb_pass2();
 
 /** init a partition that is {0}
  */
-int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, //
-                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,              //
+int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, C1_2D_SZ targ_size, //
+                         uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                                  //
                          uint16_t buf_offs);
 /** reset candidate count in blocks recursively in partition
  */
