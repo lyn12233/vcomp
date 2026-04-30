@@ -612,3 +612,26 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
     }
     return 0;
 }
+
+void c1enc_search_option_validate(const c1enc_search_option_t *opt) {
+    // validate options
+    assert_fatal(opt->try_intra || opt->try_inter);
+    assert_fatal(opt->inter_init_steps_mask != 0);
+    assert_fatal(opt->inter_newcand_cnt > 0);
+    assert_fatal(!opt->intra_try_cfl || !opt->intra_try_uv);
+    assert_fatal(opt->intra_rng_max > C1_PRED_DC && opt->intra_rng_max <= C1_PRED_PAETH + 1);
+    assert_fatal(opt->thre_mode_better_shift < 8);
+    assert_fatal(opt->thre_mode_better_mult >= (1 << opt->thre_mode_better_shift));
+    assert_fatal(opt->thre_mat_is_dif_shift < 8);
+    assert_fatal(opt->thre_mat_is_dif_mult <= (1 << opt->thre_mat_is_dif_shift));
+}
+
+int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                    const c1enc_search_option_t *opt) {
+    c1enc_search_option_validate(opt);
+    c1enc_search_p(sb->root, pix, ctx, opt);
+    c1enc_search_merge(sb->root, pix, ctx, opt);
+    c1enc_search_divide(sb->root, pix, ctx, opt);
+    c1enc_search_p(sb->root, pix, ctx, opt);
+    return 0;
+}

@@ -64,7 +64,6 @@ typedef struct {
     //    this counts for if a merge ofspecific mode is decided
     uint8_t thre_mat_is_dif_mult;  // e.g. 3
     uint8_t thre_mat_is_dif_shift; // e.g. 2
-    uint8_t part_divide_recurse;
     // superblock level
     // - palette option
     uint8_t try_palette;
@@ -72,6 +71,9 @@ typedef struct {
     // - max SAD of a block, may be fixed fraction of frame
     uint32_t thre_sad_max_b;
 } c1enc_search_option_t;
+/** option validator
+ */
+void c1enc_search_option_validate(const c1enc_search_option_t *opt);
 
 // --- pred mode search functions ---
 
@@ -89,8 +91,8 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, //
  */
 int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                          const c1enc_search_option_t *opt);
-static int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
-                          const c1enc_search_option_t *opt) {
+static inline int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                                 const c1enc_search_option_t *opt) {
     int r = 0;
     if (opt->try_intra)
         r = c1enc_search_intra_b(b, pix, opt);
@@ -98,8 +100,8 @@ static int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_
         r = c1enc_search_inter_b(b, pix, ctx, opt);
     return r;
 }
-static int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
-                          const c1enc_search_option_t *opt) {
+static inline int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                                 const c1enc_search_option_t *opt) {
     int r = 0;
     if (p->is_partition) {
         for (int i = 0; i < 4; i++) {
@@ -127,12 +129,22 @@ static int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1
 */
 int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                        const c1enc_search_option_t *opt);
-/** try divide a block(terminal partition) into 4 partitions. occurs when SAD exceeds certain fraction. 
+/** try divide a block(terminal partition) into 4 partitions. occurs when SAD exceeds certain fraction.
  note: search divide is done recursively and depth-first(from top), up to 8x8
  @param p top partition instance to try divide
  */
 int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                         const c1enc_search_option_t *opt);
+
+// --- top-level search ---
+
+/** all-in-one search on super-block level.
+ conceived process: (1) limited search, to get threshold of SAD per block. (2) try merge, then try divide, since merge
+ takes more conditions which overlap divide condition(max SAD). (3) finer-grain search
+*/
+int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
+                    const c1enc_search_option_t *opt);
+
 #ifdef __cplusplus
 }
 #endif

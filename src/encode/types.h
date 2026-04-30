@@ -16,8 +16,8 @@ extern "C" {
 #include <stdint.h>
 
 // #define C1_ENC_SB_SZ 64
-// #define C1_ENCODE_REF_FRAMES_CNT 16
 // #define C1_ENCODE_MAX_PART_CNT 4
+#define C1_ENC_REF_FRAME_CNT 16
 #define C1_ENC_INTRA_CAND_CNT 2
 #define C1_ENC_INTER_CAND_CNT 2
 #define C1_SIZE_CNT 4 // 8x8 ... 64x64
@@ -119,9 +119,24 @@ typedef struct {
 
 // --- encoder context ---
 
+/** encoder context.
+ mainly used for inter prediciton mode, which requires to refer to previous frames.
+ after encoding a frame, essential frame data are pushed back to the ctx's fields.
+*/
 struct c1enc_ctx_s {
-    c1_pixbuf_t ref_frames[16];
+    /** inversed transformed frames, with wid and hgt implied.
+        the frame is a duplication of frm->pix which should hold the inverse transform result for some time.
+    */
+    c1_pixbuf_t ref_frames[C1_ENC_REF_FRAME_CNT];
+    /** number of available reference frames.
+        new frames are stored at the back to reduce memmove's.
+    */
     uint8_t avail_ref_cnt;
+    /** referenced data stored at per super block level.
+        REF_FRAME_CNT slots aligned to REF_FRAME_CNT possible ref frames.
+        each slot points to a h*w style array of ref_t, the same size as that of the sb's in corresponding frame.
+    */
+    struct c1enc_ref_s *sb_refs[C1_ENC_REF_FRAME_CNT]; // super block level reference info
 };
 typedef struct c1enc_ctx_s c1enc_ctx_t;
 
@@ -201,14 +216,14 @@ struct c1enc_block_s {
     // uint8_t wid_per_tx, hgt_per_tx;
     C1_2D_SZ tx_size;
     C1_TX_2D_TYPE tx_type;
-    
+
     // predict mode search candidates
-    
-    uint8_t intra_cand_cnt; //count in intra_cand
-    uint8_t inter_cand_cnt;// count in inter_cand
-    
-    uint8_t pred_type_determined ; // init as 0
-    C1_PRED_TYPE pred_type; // only gathered by some func to avd redundant cand check
+
+    uint8_t intra_cand_cnt; // count in intra_cand
+    uint8_t inter_cand_cnt; // count in inter_cand
+
+    uint8_t pred_type_determined; // init as 0
+    C1_PRED_TYPE pred_type;       // only gathered by some func to avd redundant cand check
     // best cand is stored in intra_cands or inter_cands
 
     c1enc_plane_t p[3]; // planes
@@ -239,6 +254,20 @@ struct c1enc_partition_s {
     c1enc_rdstat_t stats;
 };
 typedef struct c1enc_partition_s c1enc_partition_t;
+
+struct c1enc_ref_s {
+    uint8_t is_partition;
+    uint8_t y, x; // maybe useful?
+    union {
+        struct c1enc_ref_s *refs[4];
+        struct {
+            C1_2D_SZ size;
+            c1enc_mv_t mv;
+            // other fields?
+        };
+    };
+};
+typedef struct c1enc_ref_s c1enc_ref_t;
 
 // --- helper funcs ---
 

@@ -6,13 +6,16 @@
 #include "util/mem.h"
 #include "util/pixbuf.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define C1_ENC_PART_POOLNB (4088 / sizeof(c1enc_partition_t) - 1)
+#define C1_ENC_PART_POOLNB (4000 / (sizeof(c1enc_partition_t) + 1))
+#define C1_ENC_REF_POOLNB (4000 / (sizeof(c1enc_ref_t) + 1))
 
 // this is the pool context to store all macro blocks
 c1_mpool_t c1enc_part_pool = {C1_ROUND_UP(sizeof(c1enc_partition_t), 8) * 8, C1_ENC_PART_POOLNB, NULL};
+c1_mpool_t c1enc_ref_pool = {C1_ROUND_UP(sizeof(c1enc_ref_t), 8) * 8, C1_ENC_REF_POOLNB, NULL};
 
 static void c1__print_ind(FILE *f, int ind) {
     for (int i = 0; i < ind; i += 4)
@@ -311,4 +314,130 @@ void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     }
     c1__print_ind(f, ind);
     fprintf(f, ")\r\n");
+}
+
+int c1enc_ctx_clear_entry(c1enc_ctx_t *ctx, uint8_t idx) {
+    const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
+    const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            c1enc_ref_clear(ctx->sb_refs[idx] + i * w + j);
+        }
+    }
+    free(ctx->sb_refs[idx]);
+    ctx->sb_refs[idx] = NULL;
+    c1_pixbuf_clear(ctx->ref_frames + idx);
+    return 0;
+}
+
+int c1enc_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm) {
+    // (1) push pixbuf. it should be dequant+inv tx result
+    assert_fatal(ctx->avail_ref_cnt <= C1_ENC_REF_FRAME_CNT);
+    if (ctx->avail_ref_cnt == C1_ENC_REF_FRAME_CNT) {
+        c1enc_ctx_clear_entry(ctx, 0);
+        memmove(ctx->ref_frames, ctx->ref_frames + 1, (C1_ENC_REF_FRAME_CNT - 1) * sizeof(c1_pixbuf_t));
+        memmove(ctx->sb_refs, ctx->sb_refs + 1, (C1_ENC_REF_FRAME_CNT - 1) * sizeof(c1enc_ref_t *));
+    } else {
+        ctx->avail_ref_cnt++;
+    }
+    const uint8_t idx = ctx->avail_ref_cnt - 1;
+    ctx->ref_frames[idx] = c1_pixbuf_dupview(&frm->pix);
+    // (2) create ref for each super block in frame
+    const uint16_t h = frm->inf.hgt_per_sb, w = frm->inf.wid_per_sb;
+    ctx->sb_refs[idx] = malloc(sizeof(c1enc_ref_t) * h * w);
+    assert_fatal(ctx->sb_refs[idx]);
+    for (uint16_t sb_y = 0; sb_y < h; sb_y++) {
+        for (uint16_t sb_x = 0; sb_x < w; sb_x++) {
+            c1enc_ref_from_part(ctx->sb_refs[idx] + sb_y * w + sb_x, frm->super_blocks[sb_y * w + sb_x].root);
+        }
+    }
+    return 0;
+}
+static c1enc_mv_t c1enc__block_get_mvref(const c1enc_block_t *b) {
+    if (b->pred_type_determined && b->pred_type == C1_PRED_INTER) {
+        assert_fatal(b->inter_cand_cnt > 0);
+        return b->inter_cands[0].mv; // currently mvd not considered. change later?
+    } else {
+        return (c1enc_mv_t){0};
+    }
+}
+int c1enc_ref_from_part(c1enc_ref_t *ref, const c1enc_partition_t *p) {
+    ref->is_partition = p->is_partition;
+    ref->y = p->y, ref->x = p->x;
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            assert_fatal((ref->refs[i] = c1_mpool_alloc(&c1enc_ref_pool)));
+            c1enc_ref_from_part(ref->refs[i], p->parts[i]);
+        }
+    } else {
+        ref->size = p->size;
+        // get mv from block;
+        const c1enc_block_t *b = p->b;
+        ref->mv = c1enc__block_get_mvref(b);
+    }
+    return 0;
+}
+int c1enc_ref_clear(c1enc_ref_t *ref) {
+    if (ref->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc_ref_clear(ref->refs[i]);
+            c1_mpool_dealloc(&c1enc_ref_pool, ref->refs[i]);
+            ref->refs[i] = NULL;
+        }
+    }
+    *ref = (c1enc_ref_t){0};
+    return 0;
+}
+static c1enc_ref_t *c1enc__ref_at_fromref(c1enc_ref_t *ref, uint8_t y, uint8_t x) {
+    const uint8_t h = c1_sz2hgt(ref->size), w = c1_sz2wid(ref->size);
+    assert_fatal(y >= ref->y && y < ref->y + h);
+    assert_fatal(x >= ref->x && x < ref->x + w);
+    if (ref->is_partition) {
+        // remind the order of parts: tl, tr, bl, br
+        int idx = (y >= ref->y + h / 2) * 2 + (x >= ref->x + w / 2);
+        return c1enc__ref_at_fromref(ref->refs[idx], y, x);
+    } else {
+        return ref;
+    }
+}
+c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id) {
+    const int idx = ctx->avail_ref_cnt - ref_id;
+    assert_fatal(idx >= 0 && idx < ctx->avail_ref_cnt);
+    const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
+    const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
+    if (sb_y > h || sb_x > w) {
+        return NULL;
+    }
+    c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * w + sb_x;
+    return c1enc__ref_at_fromref(sb_ref, y, x);
+}
+c1enc_block_t *c1enc__block_at_fromp(c1enc_partition_t *p, uint8_t y, uint8_t x) {
+    const uint8_t h = c1_sz2hgt(p->size), w = c1_sz2wid(p->size);
+    assert_fatal(y >= p->y && y < p->y + h);
+    assert_fatal(x >= p->x && x < p->x + w);
+    if (p->is_partition) {
+        int idx = (y >= p->y + h / 2) * 2 + (x >= p->x + w / 2);
+        return c1enc__block_at_fromp(p->parts[idx], y, x);
+    } else {
+        return p->b;
+    }
+}
+c1enc_block_t *c1enc_block_at(c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x) {
+    if (sb_y > frm->inf.hgt_per_sb || sb_x > frm->inf.wid_per_sb) {
+        return NULL;
+    }
+    c1enc_partition_t *p = frm->super_blocks[sb_y * frm->inf.wid_per_sb + sb_x].root;
+    return c1enc__block_at_fromp(p, y, x);
+}
+c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
+                           uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id) {
+    if (ref_id == 0) {
+        const c1enc_block_t *b = c1enc_block_at((c1enc_frame_t *)frm, sb_y, sb_x, y, x);
+        assert_fatal(b);
+        return c1enc__block_get_mvref(b);
+    } else {
+        const c1enc_ref_t *ref = c1enc_ref_at((c1enc_ctx_t *)ctx, sb_y, sb_x, y, x, ref_id);
+        assert_fatal(ref);
+        return ref->mv;
+    }
 }
