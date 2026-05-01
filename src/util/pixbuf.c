@@ -46,6 +46,11 @@ c1_pixbuf_t c1_pixbuf_create(C1_PIXBUF_TYPE type, uint16_t h, uint16_t w) {
     c1_sptr_t *p = c1_sptr_create(data, free);
     return (c1_pixbuf_t){type, 0, 0, h, w, w, 1, 0, p};
 }
+c1_pixbuf_t c1_pixbuf_from_ptr(C1_PIXBUF_TYPE type, uint16_t h, uint16_t w, const void *p) {
+    c1_pixbuf_t res = c1_pixbuf_create(type, h, w);
+    memcpy(res.buf->ptr, p, h * w * c1pb__sz(type));
+    return res;
+}
 c1_pixbuf_t c1_pixbuf_fromview(const c1_pixbuf_t *pix, int h_slice[3], int w_slice[3]) {
     // check inverse, normalize and check h_slice
     uint8_t h_inv = h_slice[2] < 0, w_inv = w_slice[2] < 0;
@@ -85,6 +90,18 @@ c1_pixbuf_t c1_pixbuf_cvt(const c1_pixbuf_t *in, C1_PIXBUF_TYPE type) {
             for (int y = 0; y < in->h; y++) {
                 for (int x = 0; x < in->w; x++) {
                     *c1_pixbuf_geti32(&res, y, x) = *c1_pixbuf_geti16c(in, y, x);
+                }
+            }
+        }
+    } else if (in->type == C1_PIXBUF_C3I8) {
+        if (type == C1_PIXBUF_C3I16) {
+            for (int y = 0; y < in->h; y++) {
+                for (int x = 0; x < in->w; x++) {
+                    const uint8_t *p_in = c1_pixbuf_getc(in, y, x);
+                    int16_t *p_out = c1_pixbuf_get(&res, y, x);
+                    for (int ci = 0; ci < 3; ci++) {
+                        p_out[ci] = p_in[ci];
+                    }
                 }
             }
         }
@@ -191,6 +208,14 @@ void c1_pixbuf_repr(FILE *f, const c1_pixbuf_t *pix) {
                     case C1_PIXBUF_C1I16: {
                         const int16_t *p = c1_pixbuf_getc(pix, y, x);
                         fprintf(f, "%06d ", *p);
+                    } break;
+                    case C1_PIXBUF_C3I8: {
+                        const uint8_t *p = c1_pixbuf_getc(pix, y, x);
+                        fprintf(f, "%02x%02x%02x ", p[0], p[1], p[2]);
+                    } break;
+                    case C1_PIXBUF_C3I16: {
+                        const uint16_t *p = c1_pixbuf_getc(pix, y, x);
+                        fprintf(f, "%02x%02x%02x ", p[0], p[1], p[2]);
                     } break;
                     default: {
                         fprintf(f, "? ");

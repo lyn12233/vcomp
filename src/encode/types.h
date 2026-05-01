@@ -19,7 +19,7 @@ extern "C" {
 /* table of contents
     - size enums:       45
     - pred mode enums:  55
-    - tx enums:         80 
+    - tx enums:         80
     - frame type:       105
     - motion vector:    115
     - rdstat:           125

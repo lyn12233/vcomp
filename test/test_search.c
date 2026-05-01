@@ -16,7 +16,7 @@ int main() {
     for (uint8_t off = 0; off < 16; off += 8) {
         b.xoff = b.yoff = off;
         for (C1_PRED_MODE mode = C1_PRED_MVNEW; mode <= C1_PRED_PAETH; mode++) {
-            info("mode %d:", mode);
+            info_("mode %d:", mode);
             opt.mode = mode;
             c1pd_predict(&b, diff_buf, &pix, &opt, NULL);
             c1_dump_buf(diff_buf, 8 * 8);

@@ -15,16 +15,16 @@ target_link_libraries(test_mem PRIVATE vcomp_util_asan)
 add_executable(test_search test_search.c)
 target_link_libraries(test_search PRIVATE vcomp_util_asan vcomp_enc_asan)
 add_executable(test_pred test_pred.cpp)
-target_link_libraries(test_pred PRIVATE vcomp_util_asan vcomp_enc_asan)
+target_link_libraries(test_pred PRIVATE vcomp_util vcomp_enc)
 
 # for targets without asan
-foreach(targ test_ent)
+foreach(targ test_ent test_pred)
     target_link_libraries(${targ} PRIVATE vcomp_flags)
 endforeach()
 
 #for targets with asan
 foreach(targ 
-    test_ent2 test_pixbuf test_tx test_blockd test_mem test_search test_pred
+    test_ent2 test_pixbuf test_tx test_blockd test_mem test_search
 )
     target_link_libraries(${targ} PRIVATE vcomp_flags_asan)
     add_custom_command(TARGET ${targ} PRE_BUILD

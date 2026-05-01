@@ -63,7 +63,7 @@ TEST(EntropyEncoder, EncodeIntegrity_1) {
         ASSERT_FALSE(c1ent_enc_clear(&enc));
         od_ec_enc_clear(&enc2);
 
-        info("iter %d done", iter);
+        info_("iter %d done", iter);
     }
 
     free(data);
@@ -112,7 +112,7 @@ TEST(EntropyEncoder, DecodeIntegrity_1) {
             ASSERT_EQ(sym, data[i]);
         }
         c1ent_enc_clear(&enc);
-        info("iter %d done", iter);
+        info_("iter %d done", iter);
     }
     free(data);
 }
@@ -193,7 +193,7 @@ TEST(EntropyEncoder, CdfUpdate_1) {
         uint32_t r = rand();
         c1ent_update_cdf(cdf, r % 4, 4);
         ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
-        info("after %d: %d,%d,%d,%d", r % 4, cdf[0], cdf[1], cdf[2], cdf[3]);
+        info_("after %d: %d,%d,%d,%d", r % 4, cdf[0], cdf[1], cdf[2], cdf[3]);
     }
     for (uint8_t i = 0; i < 4; i++) {
         cdf[4] = 0;
@@ -201,6 +201,6 @@ TEST(EntropyEncoder, CdfUpdate_1) {
             c1ent_update_cdf(cdf, i, 4);
             ASSERT_EQ(is_valid_cdf(cdf, 4), 0);
         }
-        info("after %dx100: %d,%d,%d,%d", i, cdf[0], cdf[1], cdf[2], cdf[3]);
+        info_("after %dx100: %d,%d,%d,%d", i, cdf[0], cdf[1], cdf[2], cdf[3]);
     }
 }

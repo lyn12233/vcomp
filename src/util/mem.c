@@ -71,9 +71,13 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
 
     // no empty slot, extend the list
     if (!n) {
-        debug("mpool extend list");
+        // debug("mpool extend list");
         c1_mpool__node_t **lnk = prev ? &prev->next : (c1_mpool__node_t **)&p->root_;
-        *lnk = (c1_mpool__node_t *)malloc(sizeof(c1_mpool__node_t) + (int)p->sz * p->nb + c1_mpool__msksz(p));
+        const size_t required_bytes = sizeof(c1_mpool__node_t) + (int)p->sz * p->nb + c1_mpool__msksz(p);
+        if (required_bytes > 4096) {
+            warning2("undesired %ux%u", p->sz, p->nb);
+        }
+        *lnk = (c1_mpool__node_t *)malloc(required_bytes);
         assert_fatal(*lnk);
         n = *lnk;
         n->next = NULL;
@@ -82,7 +86,7 @@ void *c1_mpool_alloc(c1_mpool_t *p) {
 
     // find first available offs
     int offs = c1_mpool__freeidx(p, n);
-    debug("mpool found free idx %d at node %p", offs, n);
+    // debug("mpool found free idx %d at node %p", offs, n);
     // set bit msk
     uint8_t *msk = n->data + (int)p->sz * p->nb;
     uint8_t bytemsk = (uint8_t)(1 << (offs % 8));
@@ -101,16 +105,20 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
     }
 
     // invalid: node not found or buf not aligned to sz
-    if (!n || (pbuf - n->data) % p->sz != 0)
+    if (!n || (pbuf - n->data) % p->sz != 0) {
+        fatal2("invalid ptr: node not found or not aligned");
         return -1;
+    }
     // try to unset msk
     size_t offs = (pbuf - n->data) / p->sz;
     uint8_t *msk = n->data + (int)p->sz * p->nb;
     uint8_t bytemsk = (uint8_t)(1 << (offs % 8));
-    if (!(msk[offs / 8] & bytemsk))
+    if (!(msk[offs / 8] & bytemsk)) {
+        fatal2("try to free a unoccupied space");
         return -1;
+    }
     msk[offs / 8] &= ~bytemsk;
-    debug("mpool free idx %zu at node %p", offs, n);
+    // debug("mpool free idx %zu at node %p", offs, n);
 
     // try to del node if empty
     if (c1_mpool__node_isempty(p, n)) {
@@ -119,7 +127,7 @@ int c1_mpool_dealloc(c1_mpool_t *p, void *buf) {
         if (next != NULL) {
             *lnk = next;
             free(n);
-            debug("mpool free node %p", n);
+            // debug("mpool free node %p", n);
         } else {
             // nop, do not free the last node constantly
         }
@@ -160,7 +168,7 @@ int c1_sptr_decref(c1_sptr_t **p) {
         if ((*p)->cnt_ < C1_SPTR_CNTMAX)
             (*p)->cnt_--;
         if ((*p)->cnt_ == 0) {
-            debug("sptr count to 0");
+            // debug("sptr count to 0");
             (*p)->dtor_((*p)->ptr);
             c1_mpool_dealloc(&c1_sptr__pool, *p);
             *p = NULL;
@@ -176,7 +184,7 @@ void c1_dump_buf(void *buf, uint32_t sz) {
 }
 
 void c1_dump_buf_f(FILE *fp, void *data, uint32_t len) {
-    info("\033[38;5;10mbuffer[%u]:\033[0m\r\n", len);
+    info_("\033[38;5;10mbuffer[%u]:\033[0m\r\n", len);
     const uint8_t *p = data;
     for (size_t i = 0; i < len; i += 16) {
         fprintf(fp, "%.4u:", (int)i);

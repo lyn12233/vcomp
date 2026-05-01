@@ -56,11 +56,46 @@ typedef struct {
  cfl_alpha is represented in int8_t range (-16/64,16/64)
 */
 int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
-                 const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t*cfl);
+                 const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t *cfl);
 
 /** perform inter/intra reconstruction
  */
 int c1pd_reconstruct(c1_pixbuf_t *input, c1_pixbuf_t *output, c1pd_option_t *opt);
+
+// --- helper func ---
+
+static const char *c1pd_mode2str(C1_PRED_MODE mode) {
+    switch (mode) {
+    case C1_PRED_MVNEW:
+        return "MV_NEW";
+    case C1_PRED_MVNEAR:
+        return "MV_NEAR";
+    case C1_PRED_MVNEAREST:
+        return "MV_NEAREST";
+    case C1_PRED_DC:
+        return "DC";
+    case C1_PRED_H:
+        return "H";
+    case C1_PRED_V:
+        return "V";
+    case C1_PRED_D45:
+        return "D45";
+    case C1_PRED_D135:
+        return "D135";
+    case C1_PRED_D67:
+        return "D67";
+    case C1_PRED_D113:
+        return "D113";
+    case C1_PRED_D157:
+        return "D157";
+    case C1_PRED_D203:
+        return "D203";
+    case C1_PRED_PAETH:
+        return "PAETH";
+    default:
+        return "?";
+    }
+}
 
 #ifdef __cplusplus
 }

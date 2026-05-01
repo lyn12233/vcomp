@@ -82,7 +82,9 @@ typedef struct {
     // superblock level
     // - palette option
     uint8_t try_palette;
-    // misc
+    // misc and large ints
+    // - delta for the min_ of matrices
+    uint32_t thre_mat_is_dif_delta;
     // - max SAD of a block, may be fixed fraction of frame
     uint32_t thre_sad_max_b;
 } c1enc_search_option_t;

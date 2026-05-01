@@ -53,7 +53,7 @@ c1_log_common_noret [[noreturn]] (FILE *pipe,                                   
 }
 
 #define debug(msg, ...) c1_log_common(stdout, "[DEBUG]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
-#define info(msg, ...) c1_log_common(stdout, "[INFO]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
+#define info_(msg, ...) c1_log_common(stdout, "[INFO]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
 #define warning(msg, ...) c1_log_common(stdout, "[WARN]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
 #define fatal(msg, ...) c1_log_common_noret(stdout, "[FATAL]", NULL, NULL, __LINE__, 1, msg, ##__VA_ARGS__)
 

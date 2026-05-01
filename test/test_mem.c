@@ -11,7 +11,7 @@ int main() {
     void *ptrs[3 * nptr];
     for (int i = 0; i < 3 * nptr; i++) {
         ptrs[i] = c1_mpool_alloc(&test_pool);
-        info("%d",c1_mpool_dbgcnt(&test_pool));
+        info_("%d",c1_mpool_dbgcnt(&test_pool));
         assert_fatal(c1_mpool_dbgcnt(&test_pool) == i + 1);
     }
     for (int i = 3 * nptr - 1; i >= 0; i--) {

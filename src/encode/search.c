@@ -34,6 +34,7 @@
 
 #define C1__UVMODE_SING_SRCH_CNT 4
 #define C1__INTER_STEP_0_MAX 64
+#define C1__FRAME_SAD_MAX_DEV_SCALE 8
 
 static int c1enc__cmp(uint32_t a, uint32_t b) {
     return (a > b) - (a < b);
@@ -140,7 +141,9 @@ static int c1enc__is_sad_smooth(int32_t a0, int32_t a1, int32_t a2, int32_t a3, 
     int32_t max_1 = a2 > a3 ? a2 : a3;
     int32_t min_ = min_0 < min_1 ? min_0 : min_1;
     int32_t max_ = max_0 > max_1 ? max_0 : max_1;
-    return min_ >= ((max_ * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift);
+    // debug("min=%u, max=%u", min_, max_);
+    return min_ + opt->thre_mat_is_dif_delta //
+        >= ((max_ * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift);
 }
 
 int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b) {
@@ -251,15 +254,17 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
 
 int c1enc_part_gather_rdstat(c1enc_partition_t *p) {
     if (p->is_partition) {
-        p->stats = (c1enc_rdstat_t){0};
+        p->stats = (c1enc_rdstat_t){C1_RD_SAD_BIT};
         for (int i = 0; i < 4; i++) {
             c1enc_part_gather_rdstat(p->parts[i]);
             p->stats = c1enc_rdstat_merge(&p->stats, &p->parts[i]->stats);
         }
+        // debug("merged sad: %u", p->stats.sad);
     } else {
         if (c1enc_block_gather_pred_type(p->b) < 0)
             return -1;
         p->stats = p->b->pred_type == C1_PRED_INTER ? p->b->inter_cand_stats[0] : p->b->intra_cand_stats[0];
+        // debug("current sad: %u", p->stats.sad);
     }
     return 0;
 }
@@ -589,9 +594,12 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
     for (int i = 0; i < 4; i++) {
         if (p->parts[i]->is_partition) {
             c1enc_search_merge(p->parts[i], pix, ctx, opt);
-            if (p->parts[i]->is_partition) {
-                return 0;
-            }
+        }
+    }
+    for (int i = 0; i < 4; i++) {
+        if (p->parts[i]->is_partition) {
+            // debug("early exit");
+            return 0;
         }
     }
     uint8_t try_inter = opt->try_inter, try_intra = opt->try_intra; // search switch
@@ -603,11 +611,11 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
     for (int i = 0; i < 4; i++) {
         const c1enc_block_t *b = p->parts[i]->b;
         try_inter = try_inter
-                 && c1enc__is_mode_better(b->intra_cand_stats, b->inter_cand_stats, b->intra_cand_cnt,
-                                          b->inter_cand_cnt, opt);
+                 && !c1enc__is_mode_better(b->intra_cand_stats, b->inter_cand_stats, b->intra_cand_cnt,
+                                           b->inter_cand_cnt, opt);
         try_intra = try_intra
-                 && c1enc__is_mode_better(b->inter_cand_stats, b->intra_cand_stats, b->inter_cand_cnt,
-                                          b->intra_cand_cnt, opt);
+                 && !c1enc__is_mode_better(b->inter_cand_stats, b->intra_cand_stats, b->inter_cand_cnt,
+                                           b->intra_cand_cnt, opt);
         if (try_intra) {
             // choose the first cand to merge. if no cand, should ensure try_intra is false
             part_stat_intra = c1enc_rdstat_merge(&part_stat_intra, b->intra_cand_stats);
@@ -626,6 +634,7 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
         && (!c1enc__is_sad_smooth(m_intra[0], m_intra[1], m_intra[2], m_intra[3], opt)
             || part_stat_intra.sad <= opt->thre_sad_max_b)) {
         try_intra = 0;
+        // debug("no try intra merge for not smooth %d,%d", p->y, p->x);
     }
     if (try_inter
         && (!c1enc__is_sad_smooth(m_inter[0], m_inter[1], m_inter[2], m_inter[3], opt)
@@ -640,18 +649,23 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
     *p->b = (c1enc_block_t){0};
     c1enc_block_update(p->b, p->sb, p->size, p->y, p->x, p->sb_y, p->sb_x, p->buf_offs);
     if (try_intra) {
+        // debug("try intra merge-search %d,%d", p->y, p->x);
         c1enc_search_intra_b(p->b, pix, opt);
+        assert_fatal(p->b->intra_cand_cnt > 0);
     }
     if (try_inter) {
         c1enc_search_inter_b(p->b, pix, ctx, opt);
+        assert_fatal(p->b->inter_cand_cnt > 0);
     }
-    int can_merge = (try_intra && p->b->intra_cand_cnt > 0
-                     && p->b->intra_cand_stats[0].sad
-                            <= ((part_stat_intra.sad * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift))
-                 || (try_inter && p->b->inter_cand_cnt > 0
-                     && p->b->inter_cand_stats[0].sad
-                            <= ((part_stat_inter.sad * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift));
+    int can_merge
+        = (try_intra && p->b->intra_cand_cnt > 0
+           && part_stat_intra.sad
+                  > ((p->b->intra_cand_stats[0].sad * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift))
+       || (try_inter && p->b->inter_cand_cnt > 0
+           && part_stat_inter.sad
+                  > ((p->b->inter_cand_stats[0].sad * opt->thre_mat_is_dif_mult) >> opt->thre_mat_is_dif_shift));
     if (can_merge) {
+        // debug("can merge");
         // merge. release partitions
         p->is_partition = 0;
         for (int i = 0; i < 4; i++) {
@@ -669,8 +683,15 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
 }
 int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                         const c1enc_search_option_t *opt) {
-    // ensure it is terminal partition and size is a square?
-    if (p->is_partition || p->size <= C1_SZ_8_8 || p->size > C1_SZ_64_64)
+    if (p->is_partition) {
+        debug("skip");
+        for (int i = 0; i < 4; i++) {
+            c1enc_search_divide(p->parts[i], pix, ctx, opt);
+        }
+        return 0;
+    }
+    // ensure size is a square?
+    if (p->size <= C1_SZ_8_8 || p->size > C1_SZ_64_64)
         return 0;
     const c1enc_block_t *b = p->b;
     if (!b->intra_cand_cnt && !b->inter_cand_cnt) {
@@ -691,12 +712,15 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 
     // divide if SAD exceeds
     if (m_intra > opt->thre_sad_max_b && m_inter > opt->thre_sad_max_b) {
-        // dealloc block
+        debug("divide: %u,%u", p->y, p->x);
+        // (1) update indicator
+        p->is_partition = 1;
+        // (2) dealloc block
         c1enc_block_clear(p->b);
         free(p->b);
         p->b = NULL;
 
-        // alloc parts
+        // (3) alloc parts
         C1_2D_SZ new_sz = p->size - 1;
         uint8_t new_hgt = c1_sz2hgt(new_sz);
         uint8_t new_wid = c1_sz2wid(new_sz);
@@ -713,7 +737,7 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
                                  p->y + offs[i][0], p->x + offs[i][1], p->sb_y, p->sb_x, //
                                  p->buf_offs + i * new_hgt * new_wid);
 
-            // conduct search further divide
+            // conduct search and further divide
             c1enc_search_p(p->parts[i], pix, ctx, opt);
             c1enc_search_divide(p->parts[i], pix, ctx, opt);
         }
@@ -724,16 +748,42 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 void c1enc_search_option_validate(const c1enc_search_option_t *opt) {
     // validate options
     assert_fatal(opt->try_intra || opt->try_inter);
-    assert_fatal(opt->inter_init_steps_mask != 0);
-    assert_fatal(opt->inter_newcand_cnt > 0);
-    assert_fatal(!opt->intra_try_cfl || !opt->intra_try_uv);
-    assert_fatal(opt->intra_rng_max > C1_PRED_DC && opt->intra_rng_max <= C1_PRED_PAETH + 1);
+    if (opt->try_inter) {
+        assert_fatal(opt->inter_init_steps_mask != 0);
+        assert_fatal(opt->inter_newcand_cnt > 0);
+    }
+    if (opt->try_intra) {
+        assert_fatal(!opt->intra_try_cfl || !opt->intra_try_uv);
+        assert_fatal(opt->intra_rng_max > C1_PRED_DC && opt->intra_rng_max <= C1_PRED_PAETH + 1);
+    }
     assert_fatal(opt->thre_mode_better_shift < 8);
     assert_fatal(opt->thre_mode_better_mult >= (1 << opt->thre_mode_better_shift));
     assert_fatal(opt->thre_mat_is_dif_shift < 8);
     assert_fatal(opt->thre_mat_is_dif_mult <= (1 << opt->thre_mat_is_dif_shift));
 }
 
+/** decide a sad max threshold for merge and divide
+ @param a block desired sad max, eq to average sad given default block size(currently 16x16) at super block level
+ @param b frame desired sad max, eq to average sad given default block size at frame level. it is a prediction from last
+ frame or a default.
+ @details
+ - if a is much smaller, it indicates the sb has less details, thus should not occupy much bits,restricted by upper
+ bound a*scale.
+ - if a is much bigger, it indicates more details, but should not exceed possible rate limit, restricted by lower bound
+ a/scale.
+ - within range, b plays dominant role in bit allocation.
+ the deviation scale is defined by local macro C1__FRAME_SAD_MAX_DEV_SCALE, which should be a power of 2.
+*/
+static uint32_t c1enc__search_decide_sad_max(uint32_t a, uint32_t b) {
+    if (b < a / C1__FRAME_SAD_MAX_DEV_SCALE) {
+        return a / C1__FRAME_SAD_MAX_DEV_SCALE;
+    }
+    if (b / C1__FRAME_SAD_MAX_DEV_SCALE > a) {
+        // avoid overflow
+        return UINT32_MAX / C1__FRAME_SAD_MAX_DEV_SCALE > a ? a * C1__FRAME_SAD_MAX_DEV_SCALE : UINT32_MAX;
+    }
+    return b;
+}
 int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                     const c1enc_search_option_t *opt) {
     c1enc_search_option_validate(opt);
@@ -747,9 +797,10 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
 
     c1enc_search_p(sb->root, pix, ctx, &limited_opt);
     c1enc_part_gather_rdstat(sb->root);
-    // make SAD threshold adaptive?
-    limited_opt.thre_sad_max_b += sb->root->stats.sad / (4 * 4); // desired size 16x16
-    limited_opt.thre_sad_max_b /= 2;
+    // make SAD threshold adaptive. (4*4) is averaging 64x64->16x16 currently
+    limited_opt.thre_sad_max_b = c1enc__search_decide_sad_max( //
+        sb->root->stats.sad / (4 * 4), limited_opt.thre_sad_max_b);
+
     c1enc_search_merge(sb->root, pix, ctx, &limited_opt);
     c1enc_search_divide(sb->root, pix, ctx, &limited_opt);
     c1enc_search_p(sb->root, pix, ctx, opt);

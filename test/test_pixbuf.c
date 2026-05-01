@@ -22,7 +22,7 @@ int main() {
     c1_pixbuf_t pb5 = c1_pixbuf_create(C1_PIXBUF_C1I8, 10, 10);
     c1_pixbuf_paste(&pb5, &pb, -4, -4);
     c1_pixbuf_paste(&pb5, &pb, 6, 8);
-    info("pb5");
+    info_("pb5");
     c1_pixbuf_repr(stdout, &pb5);
     c1_pixbuf_clear(&pb);
     c1_pixbuf_clear(&pb2);

@@ -26,6 +26,6 @@ int main(){
     }
     uint32_t sz;
     uint8_t *out = c1ent_enc_done(&enc, &sz);
-    info("encode result:");
+    info_("encode result:");
     c1_dump_buf(out, sz);
 }

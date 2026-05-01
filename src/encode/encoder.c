@@ -1,4 +1,5 @@
 #include "encoder.h"
+#include "predictor.h"
 #include "types.h"
 
 #include "math/transform.h"
@@ -112,6 +113,7 @@ int c1enc_frame_validate(const c1enc_frame_t *frm) {
     return 0;
 }
 void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
+    c1_pixbuf_repr(stdout, &frm->pix);
     c1__print_ind(f, ind);
     fprintf(f, "Frame [%s, bqi=%d, height=%dx64, width=%dx64](\r\n", frm->inf.frame_type == C1_FRAME_P ? "P" : "I",
             frm->inf.base_q_index, frm->inf.hgt_per_sb, frm->inf.wid_per_sb);
@@ -325,11 +327,28 @@ int c1enc_block_validate(c1enc_block_t *b) {
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
     fprintf(f, "Block [%dx%d, (+%d,+%d)] (\r\n", c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff);
-    for (int ci = 0; ci < 3; ci++) {
+    // for (int ci = 0; ci < 3; ci++) {
+    //     c1__print_ind(f, ind + 4);
+    //     fprintf(f, "Plane [%c] (\r\n", "yuv"[ci]);
+    //     c1__print_ind(f, ind + 4);
+    //     fprintf(f, ")\r\n");
+    // }
+    if (b->intra_cand_cnt > 0) {
         c1__print_ind(f, ind + 4);
-        fprintf(f, "Plane [%c] (\r\n", "yuv"[ci]);
-        c1__print_ind(f, ind + 4);
-        fprintf(f, ")\r\n");
+        fprintf(f, "intra_cands: ");
+        for (int i = 0; i < b->intra_cand_cnt; i++) {
+            const c1enc_mi_intra_t *mi = b->intra_cands + i;
+            const c1enc_rdstat_t *stat = b->intra_cand_stats + i;
+            fprintf(f, "(%s, ", c1pd_mode2str(mi->mode_y));
+            if (mi->mode_y != mi->mode_uv && !mi->use_cfl)
+                fprintf(f, "%s, ", c1pd_mode2str(mi->mode_uv));
+            if (mi->use_cfl) {
+                fprintf(f, "use_cfl, ");
+            }
+            fprintf(f, "SAD=%u", stat->sad);
+            fprintf(f, "), ");
+        }
+        fprintf(f, "\r\n");
     }
     c1__print_ind(f, ind);
     fprintf(f, ")\r\n");
