@@ -11,6 +11,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* table of contents
+    - intra predictor cores
+        - dc's:                     50
+        - 90deg directions:         60
+        - paeth:                    90
+        - 22.5/45 directions z1:    110
+        - 22.5/45 directions z2:    140
+        - 22.5/45 directions z3:    160
+        - tangent lookup:           200
+        - 22.5/45 all directions:   200
+        - uniform dir pred cores:   250
+        - pred core arrays:         270
+        - intra pred without cfl:   300
+        - inter pred:               380
+        - intra cfl:                400
+        - all in one:               460        
+*/
+
 // --- utils ---
 
 static void c1pd__memset16(int16_t *output, int16_t val, int nb) {

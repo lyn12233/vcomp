@@ -100,7 +100,7 @@ int c1enc_block_clear(c1enc_block_t *b);
 int c1enc_block_validate(c1enc_block_t *b);
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);
 
-// --- super block info/context accessing and referencing ---
+// --- --- super block info/context accessing and referencing --- ---
 
 /** clear an existing entry in context. should be internal func.
  */

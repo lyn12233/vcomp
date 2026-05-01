@@ -6,6 +6,8 @@ enable_testing()
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
+set(OpenCV_ROOT "${VCPKG_INSTALLED_DIR}/x64-windows/share/opencv2")
+find_package(OpenCV REQUIRED)
 include(CheckIncludeFile)
 include(GoogleTest)
 

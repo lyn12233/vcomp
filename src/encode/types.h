@@ -16,6 +16,24 @@ extern "C" {
 
 #include <stdint.h>
 
+/* table of contents
+    - size enums:       45
+    - pred mode enums:  55
+    - tx enums:         80 
+    - frame type:       105
+    - motion vector:    115
+    - rdstat:           125
+    - context:          140
+    - frame_t:          170
+    - super_block_t:    190
+    - plane_t:          200
+    - mode info:        210
+    - block_t:          225
+    - partition_t:      260
+    - ref_t:            280
+    - helper funcs:     300
+*/
+
 // #define C1_ENC_SB_SZ 64
 // #define C1_ENCODE_MAX_PART_CNT 4
 #define C1_ENC_REF_FRAME_CNT 16
@@ -23,7 +41,7 @@ extern "C" {
 #define C1_ENC_INTER_CAND_CNT 2
 #define C1_SIZE_CNT 4 // 8x8 ... 64x64
 
-// -- size enums ---
+// --- 2d size enums ---
 
 enum {
     C1_SZ_8_8,

@@ -10,6 +10,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* table of contents
+    - basic type ctor and dtors and reprs
+        - frame:            50
+        - super block:      130
+        - partition:        180
+        - block:            290
+    - context accessing and referencing
+        - context management:   340
+        - context access:       410
+        - super block access:   440
+        - get reference mv:     460
+*/
+
 #define C1_ENC_PART_POOLNB (4000 / (sizeof(c1enc_partition_t) + 1))
 #define C1_ENC_REF_POOLNB (4000 / (sizeof(c1enc_ref_t) + 1))
 
@@ -21,6 +34,10 @@ static void c1__print_ind(FILE *f, int ind) {
     for (int i = 0; i < ind; i += 4)
         fprintf(f, "    ");
 }
+
+// --- --- constructors and destructors --- ---
+
+// --- frame ---
 
 int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // expected height and width
@@ -109,6 +126,8 @@ void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
     fprintf(f, ")\r\n");
 }
 
+// --- super block ---
+
 int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x) {
     sb->sb_y = sb_y, sb->sb_x = sb_x;
 
@@ -155,9 +174,7 @@ void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind) {
     }
 }
 
-int c1enc_sb_pass0();
-int c1enc_sb_pass1();
-int c1enc_sb_pass2();
+// --- partition ---
 
 int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, C1_2D_SZ targ_size, //
                          uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                                  //
@@ -273,6 +290,8 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
     fprintf(f, ")\r\n");
 }
 
+// --- block ---
+
 int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
                        uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
                        uint16_t buf_offs) {
@@ -315,6 +334,10 @@ void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
     fprintf(f, ")\r\n");
 }
+
+// --- --- context accessing and referencing --- ---
+
+// --- context managment ---
 
 int c1enc_ctx_clear_entry(c1enc_ctx_t *ctx, uint8_t idx) {
     const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
@@ -388,6 +411,9 @@ int c1enc_ref_clear(c1enc_ref_t *ref) {
     *ref = (c1enc_ref_t){0};
     return 0;
 }
+
+// --- context access ---
+
 static c1enc_ref_t *c1enc__ref_at_fromref(c1enc_ref_t *ref, uint8_t y, uint8_t x) {
     const uint8_t h = c1_sz2hgt(ref->size), w = c1_sz2wid(ref->size);
     assert_fatal(y >= ref->y && y < ref->y + h);
@@ -411,7 +437,10 @@ c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_
     c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * w + sb_x;
     return c1enc__ref_at_fromref(sb_ref, y, x);
 }
-c1enc_block_t *c1enc__block_at_fromp(c1enc_partition_t *p, uint8_t y, uint8_t x) {
+
+// --- super block access ---
+
+static c1enc_block_t *c1enc__block_at_fromp(c1enc_partition_t *p, uint8_t y, uint8_t x) {
     const uint8_t h = c1_sz2hgt(p->size), w = c1_sz2wid(p->size);
     assert_fatal(y >= p->y && y < p->y + h);
     assert_fatal(x >= p->x && x < p->x + w);
@@ -429,6 +458,9 @@ c1enc_block_t *c1enc_block_at(c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x, 
     c1enc_partition_t *p = frm->super_blocks[sb_y * frm->inf.wid_per_sb + sb_x].root;
     return c1enc__block_at_fromp(p, y, x);
 }
+
+// --- get reference mv ---
+
 c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
                            uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id) {
     if (ref_id == 0) {

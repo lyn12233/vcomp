@@ -10,6 +10,28 @@
 #include <stdint.h>
 #include <string.h>
 
+/* table of contents
+    - helpers:
+        - matrix calc helper:       50
+        - matrix evaluation helper: 110
+        - rdstat ops:               150
+        - mode inf ops:             180
+        - block pred candidate ops: 190
+    - info collection:
+        - gather rdstat:            250
+        - gather pred type:         270
+        - gather residual:          280
+    - prediction mode search:
+        - intra:                    320
+        - inter with step0:         420
+        - inter:                    500
+        - merge:                    580
+        - divide:                   670
+    - prediction mode search all-in-one:
+        - option validate:          720
+        - for super block:          740
+*/
+
 #define C1__UVMODE_SING_SRCH_CNT 4
 #define C1__INTER_STEP_0_MAX 64
 
@@ -225,6 +247,8 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
     return 0;
 }
 
+// --- info collection ---
+
 int c1enc_part_gather_rdstat(c1enc_partition_t *p) {
     if (p->is_partition) {
         p->stats = (c1enc_rdstat_t){0};
@@ -266,7 +290,7 @@ int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const 
             pred_opt.mode = mi->mode_y;
             pred_opt.use_cfl = 1;
             pred_opt.has_cfl_alpha = 1;
-            int8_t cfl_alphas[3] = {NULL, mi->cfl_alpha_u, mi->cfl_alpha_v};
+            int8_t cfl_alphas[3] = {0, mi->cfl_alpha_u, mi->cfl_alpha_v};
             for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_alphas + ci);
@@ -294,6 +318,8 @@ int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const 
     }
     return 0;
 }
+
+// --- pred mode search ---
 
 int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
     if (opt->intra_try_cfl || !opt->intra_try_uv) {
@@ -549,6 +575,8 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     return 0;
 }
 
+// --- merge and divide search ---
+
 int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                        const c1enc_search_option_t *opt) {
     // criterions:
@@ -720,8 +748,8 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
     c1enc_search_p(sb->root, pix, ctx, &limited_opt);
     c1enc_part_gather_rdstat(sb->root);
     // make SAD threshold adaptive?
-    limited_opt.thre_sad_max_b += sb->root->stats.sad/(4*4); // desired size 16x16
-    limited_opt.thre_sad_max_b /=2;
+    limited_opt.thre_sad_max_b += sb->root->stats.sad / (4 * 4); // desired size 16x16
+    limited_opt.thre_sad_max_b /= 2;
     c1enc_search_merge(sb->root, pix, ctx, &limited_opt);
     c1enc_search_divide(sb->root, pix, ctx, &limited_opt);
     c1enc_search_p(sb->root, pix, ctx, opt);
