@@ -38,6 +38,7 @@ typedef struct {
     C1_PRED_MODE mode;
     uint8_t ci; // color idx: yuv
     uint8_t use_cfl;
+    uint8_t has_cfl_alpha;
     c1enc_mv_t mv;
 } c1pd_option_t;
 

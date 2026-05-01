@@ -20,7 +20,8 @@ static int c1enc__cmpf(float a, float b) {
     return (a > b) - (a < b);
 }
 
-/** calculate sum of asbolute difference of a plane(p)
+/** calculate sum of asbolute difference of a plane(p).
+ suppose prediction result is stored in b->p[ci].diff buffer
  @param pix c3i16
 */
 static uint32_t c1enc__calc_p_sad(const c1enc_block_t *b, const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
@@ -40,6 +41,22 @@ static uint32_t c1enc__calc_p_sad(const c1enc_block_t *b, const c1_pixbuf_t *pix
     c1_pixbuf_clear(&ci_pix);
     return res;
 }
+/** prediction to difference.
+ similar to @ref c1enc__calc_p_sad except core calculation.
+*/
+static void c1enc__calc_p_pred2dif(const c1enc_block_t *b, const c1_pixbuf_t *pix, const c1pd_option_t *opt) {
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+    c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
+    for (int i = 0; i < bh; i++) {
+        for (int j = 0; j < bw; j++) {
+            b->p[opt->ci].diff[i * bw + j] -= *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j);
+        }
+    }
+    c1_pixbuf_clear(&ci_pix);
+}
+
 /** calculate sum of asbolute difference of a plane(p) with 2x2 sub sampling
  assumes pix hgt and wid are even, which always holds bec frame is 64 pix aligned.
  @param pix c3i16
@@ -136,7 +153,9 @@ int c1enc_mi_intra_eq(const c1enc_mi_intra_t *a, const c1enc_mi_intra_t *b) {
     if (a->mode_y != b->mode_y || (a->use_cfl != b->use_cfl))
         return 0;
     if (a->use_cfl) {
-        return a->cfl_alpha_u == b->cfl_alpha_u && a->cfl_alpha_v == b->cfl_alpha_v;
+        // return a->cfl_alpha_u == b->cfl_alpha_u && a->cfl_alpha_v == b->cfl_alpha_v;
+        // do not consider the difference of alphas
+        return 1;
     } else {
         return a->mode_uv == b->mode_uv;
     }
@@ -144,11 +163,22 @@ int c1enc_mi_intra_eq(const c1enc_mi_intra_t *a, const c1enc_mi_intra_t *b) {
 int c1enc_mi_inter_eq(const c1enc_mi_inter_t *a, const c1enc_mi_inter_t *b) {
     if (a->mode != b->mode || a->ref_frame != b->ref_frame)
         return 0;
-    if (a->mode == C1_PRED_MVNEW) {
-        return a->mv.y == b->mv.y && a->mv.x == b->mv.x;
-    } else {
-        return a->mvd.y == b->mvd.y && a->mvd.x == b->mvd.x;
+    return a->mv.y == b->mv.y && a->mv.x == b->mv.x;
+}
+
+int c1enc_block_has_intra_cand(const c1enc_block_t *b, const c1enc_mi_intra_t *mi) {
+    for (int i = 0; i < b->intra_cand_cnt; i++) {
+        if (c1enc_mi_intra_eq(mi, b->intra_cands + i))
+            return 1;
     }
+    return 0;
+}
+int c1enc_block_has_inter_cand(const c1enc_block_t *b, const c1enc_mi_inter_t *mi) {
+    for (int i = 0; i < b->inter_cand_cnt; i++) {
+        if (c1enc_mi_inter_eq(mi, b->inter_cands + i))
+            return 1;
+    }
+    return 0;
 }
 
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat) {
@@ -156,10 +186,8 @@ int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, con
     c1enc_mi_intra_t *cands = b->intra_cands;
     const uint8_t nbcand = b->intra_cand_cnt;
 
-    for (int i = 0; i < nbcand; i++) {
-        if (c1enc_mi_intra_eq(mi, cands + i))
-            return 0;
-    }
+    if (c1enc_block_has_intra_cand(b, mi))
+        return 0;
 
     // nbcand<=CAND_CNT and the arrays contain CAND_CNT+1 slots
     stats[nbcand] = *stat, cands[nbcand] = *mi;
@@ -180,10 +208,8 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
     c1enc_mi_inter_t *cands = b->inter_cands;
     const int nbcand = b->inter_cand_cnt;
 
-    for (int i = 0; i < nbcand; i++) {
-        if (c1enc_mi_inter_eq(mi, cands + i))
-            return 0;
-    }
+    if (c1enc_block_has_inter_cand(b, mi))
+        return 0;
 
     // nbcand<=CAND_CNT and the arrays contain CAND_CNT+1 slots
     stats[nbcand] = *stat, cands[nbcand] = *mi;
@@ -199,26 +225,71 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
     return 0;
 }
 
-int c1enc_part_gather_rdstat(c1enc_partition_t *p, int depth) {
-    if (p->is_partition && depth > 0) {
+int c1enc_part_gather_rdstat(c1enc_partition_t *p) {
+    if (p->is_partition) {
         p->stats = (c1enc_rdstat_t){0};
         for (int i = 0; i < 4; i++) {
-            c1enc_part_gather_rdstat(p->parts[i], depth - 1);
+            c1enc_part_gather_rdstat(p->parts[i]);
             p->stats = c1enc_rdstat_merge(&p->stats, &p->parts[i]->stats);
         }
     } else {
-        if (p->b->intra_cand_cnt == 0 && p->b->inter_cand_cnt == 0) {
-            warning("block do not have dicision candidates");
+        if (c1enc_block_gather_pred_type(p->b) < 0)
             return -1;
-        }
-        const c1enc_rdstat_t *s1 = p->b->intra_cand_stats;
-        const c1enc_rdstat_t *s2 = p->b->inter_cand_stats;
-        if (p->b->intra_cand_cnt == 0) {
-            p->stats = *s2;
-        } else if (p->b->inter_cand_cnt == 0) {
-            p->stats = *s1;
+        p->stats = p->b->pred_type == C1_PRED_INTER ? p->b->inter_cand_stats[0] : p->b->intra_cand_stats[0];
+    }
+    return 0;
+}
+
+int c1enc_block_gather_pred_type(c1enc_block_t *b) {
+    if (b->intra_cand_cnt == 0 && b->inter_cand_cnt == 0) {
+        warning("block do not have dicision candidates");
+        return -1;
+    }
+    b->pred_type_determined = 1;
+    if (b->intra_cand_cnt == 0) {
+        b->pred_type = C1_PRED_INTER;
+    } else if (b->inter_cand_cnt == 0) {
+        b->pred_type = C1_PRED_INTRA;
+    } else {
+        b->pred_type = c1enc_rdstat_cmp(b->intra_cand_stats, b->inter_cand_stats) > 0 ? C1_PRED_INTRA : C1_PRED_INTER;
+    }
+    return 0;
+}
+
+int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, uint8_t ref_id) {
+    assert_fatal(b->pred_type_determined);
+    c1pd_option_t pred_opt = {0};
+    pred_opt.size = b->size;
+    if (b->pred_type == C1_PRED_INTRA) {
+        const c1enc_mi_intra_t *mi = b->intra_cands;
+        if (mi->use_cfl) {
+            pred_opt.mode = mi->mode_y;
+            pred_opt.use_cfl = 1;
+            pred_opt.has_cfl_alpha = 1;
+            int8_t cfl_alphas[3] = {NULL, mi->cfl_alpha_u, mi->cfl_alpha_v};
+            for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.ci = ci;
+                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_alphas + ci);
+                c1enc__calc_p_pred2dif(b, pix, &pred_opt);
+            }
         } else {
-            p->stats = c1enc_rdstat_cmp(s1, s2) > 0 ? *s1 : *s2;
+            const C1_PRED_MODE modes[3] = {mi->mode_y, mi->mode_uv, mi->mode_uv};
+            for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.mode = modes[ci];
+                pred_opt.ci = ci;
+                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                c1enc__calc_p_pred2dif(b, pix, &pred_opt);
+            }
+        }
+    } else {
+        const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, ref_id);
+        const c1enc_mi_inter_t *mi = b->inter_cands;
+        pred_opt.mode = C1_PRED_MVNEW;
+        pred_opt.mv = mi->mv;
+        for (uint8_t ci = 0; ci < 3; ci++) {
+            pred_opt.ci = ci;
+            c1pd_predict(b, b->p[ci].diff, ref_pix, &pred_opt, NULL);
+            c1enc__calc_p_pred2dif(b, pix, &pred_opt);
         }
     }
     return 0;
@@ -227,7 +298,7 @@ int c1enc_part_gather_rdstat(c1enc_partition_t *p, int depth) {
 int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
     if (opt->intra_try_cfl || !opt->intra_try_uv) {
         // only 1 mode dimension is searched
-        c1pd_option_t pred_opt;
+        c1pd_option_t pred_opt = {0};
         pred_opt.size = b->size;
         pred_opt.use_cfl = 0; // no cfl first
         c1enc_mi_intra_t mi;
@@ -270,7 +341,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
             best_ysad[i] = best_uvsad[i] = INT32_MAX;
         }
 
-        c1pd_option_t pred_opt;
+        c1pd_option_t pred_opt = {0};
         pred_opt.size = b->size;
         pred_opt.use_cfl = 0;
         c1enc_mi_intra_t mi;
@@ -333,6 +404,7 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
     // short alias of vars
     uint8_t step = step_cur;
     const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
+    const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, opt->inter_ref_idx);
 
     // init search info
     c1enc_mv_t c = {y0, x0};                           // mv search center
@@ -369,7 +441,7 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
 
             for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
-                c1pd_predict(b, b->p[ci].diff, ctx->ref_frames + opt->inter_ref_idx, &pred_opt, NULL);
+                c1pd_predict(b, b->p[ci].diff, ref_pix, &pred_opt, NULL);
                 // cumulate sad of yuv planes. considering sub sampling.
                 if (opt->inter_sad_subsamp_mask & dist) {
                     matrices[idxs[cand]] += c1enc__calc_p_sad(b, pix, &pred_opt);
@@ -404,19 +476,23 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     // alias
     const uint8_t nbcand = opt->inter_newcand_cnt;
     const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
+    const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, opt->inter_ref_idx);
+
     // get step_0
     uint8_t step_0 = C1__INTER_STEP_0_MAX;
     while (!(opt->inter_init_steps_mask & step_0) && step_0)
         step_0 /= 2;
     if (!step_0)
         return 0;
+
     // prepare search matrix record
     uint32_t matrix_nb = (step_0 * 2 + 1) * (step_0 * 2 + 1);
-    uint32_t *matrices = malloc(matrix_nb * sizeof(uint32_t) + //
+    uint32_t *matrices = malloc(matrix_nb * sizeof(uint32_t) + // all-in-one alloc
                                 (nbcand + 1) * sizeof(c1enc_mv_t) + (nbcand + 1) * sizeof(uint32_t));
     assert_fatal(matrices);
-    memset(matrices, 0xff, matrix_nb * sizeof(int32_t));
+    memset(matrices, 0xff, matrix_nb * sizeof(int32_t)); // set to UINT32_MAX
 
+    // (1) conduct diamon search on every init steps indicated by mask
     uint8_t step_cur = step_0;
     while (step_cur) {
         if (opt->inter_init_steps_mask & step_cur)
@@ -424,14 +500,16 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
         step_cur /= 2;
     }
 
-    // add certain number of candidates. search in matrices first, ordered by these matrices
+    // (2) add certain number of candidates. search in matrices first, ordered by these matrices
     c1enc_mv_t *mvs = (void *)(matrices + matrix_nb);
     uint32_t *ms = (void *)(mvs + nbcand + 1);
-    memset(mvs, 0, (matrix_nb + 1) * sizeof(c1enc_mv_t));
+    memset(ms, 0xff, (matrix_nb + 1) * sizeof(uint32_t)); // set to UINT32_MAX
+    // iterate each offset in matrices. the number of candidate is restricted by nbcand
     for (int16_t y = -step_0 + y0; y <= step_0 + y0; y++) {
         for (int16_t x = -step_0 + x0; x <= step_0 + x0; x++) {
             const uint16_t m_i = y - y0 + step_0, m_j = x - x0 + step_0;
             const uint16_t m_idx = m_i * (step_0 * 2 + 1) + m_j;
+            // bubble-sort
             for (int i = nbcand; i >= 1; i--) {
                 if (matrices[m_idx] < ms[i - 1]) {
                     ms[i] = ms[i - 1], mvs[i] = mvs[i - 1];
@@ -441,25 +519,27 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
             } // sort
         } // x iter
     } // y iter
+
+    // (3) traverse candidates and add to block
     for (int i = 0; i < nbcand; i++) {
-        if (ms[i] != 0xffffffff) {
-            // gather stat: if sad
+        if (ms[i] != UINT32_MAX) {
+            // gather SAD in 2 cases: case subsampled, recalculate, otherwise minus the smooth factor
             c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
             const uint8_t dist = (uint8_t)c1_clamp16(c1_abs_i16(mvs[i].y) + c1_abs_i16(mvs[i].x), 0, 255);
             if (opt->inter_sad_subsamp_mask & dist) {
-                // recalc sad
-                c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW, 0, 0, mvs[i]};
+                // (3.1) recalc sad
+                c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW, 0, 0, 0, mvs[i]};
                 stat.sad = 0;
                 for (uint8_t ci = 0; ci < 3; ci++) {
-                    c1pd_predict(b, b->p[ci].diff, ctx->ref_frames + opt->inter_ref_idx, &pred_opt, NULL);
+                    c1pd_predict(b, b->p[ci].diff, ref_pix, &pred_opt, NULL);
                     stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
                 }
             } else {
-                // inverse sad from matrix
+                // (3.2) inverse sad from matrix
                 stat.sad = ms[i] - opt->inter_smooth_lambda * dist / 4;
             }
             // gather mode info
-            c1enc_mi_inter_t mi = {C1_PRED_MVNEW, 0, mvs[i], 0};
+            c1enc_mi_inter_t mi = {C1_PRED_MVNEW, 0, mvs[i]};
             // add cand to block
             c1enc_block_add_inter_cand(b, &mi, &stat);
         } else
@@ -629,9 +709,21 @@ void c1enc_search_option_validate(const c1enc_search_option_t *opt) {
 int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                     const c1enc_search_option_t *opt) {
     c1enc_search_option_validate(opt);
-    c1enc_search_p(sb->root, pix, ctx, opt);
-    c1enc_search_merge(sb->root, pix, ctx, opt);
-    c1enc_search_divide(sb->root, pix, ctx, opt);
+    c1enc_search_option_t limited_opt = *opt;
+    limited_opt.inter_init_steps_mask = 16 | 8;
+    limited_opt.inter_smooth_lambda = 0;
+    limited_opt.intra_try_uv = 0;
+    limited_opt.intra_try_cfl = 0;
+    limited_opt.intra_rng_max = C1_PRED_D135 + 1;
+    // limited_opt.thre_sad_max_b = 1 << 12;
+
+    c1enc_search_p(sb->root, pix, ctx, &limited_opt);
+    c1enc_part_gather_rdstat(sb->root);
+    // make SAD threshold adaptive?
+    limited_opt.thre_sad_max_b += sb->root->stats.sad/(4*4); // desired size 16x16
+    limited_opt.thre_sad_max_b /=2;
+    c1enc_search_merge(sb->root, pix, ctx, &limited_opt);
+    c1enc_search_divide(sb->root, pix, ctx, &limited_opt);
     c1enc_search_p(sb->root, pix, ctx, opt);
     return 0;
 }

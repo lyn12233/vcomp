@@ -401,7 +401,7 @@ static c1enc_ref_t *c1enc__ref_at_fromref(c1enc_ref_t *ref, uint8_t y, uint8_t x
     }
 }
 c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id) {
-    const int idx = ctx->avail_ref_cnt - ref_id;
+    const int idx = (int)ctx->avail_ref_cnt - ref_id;
     assert_fatal(idx >= 0 && idx < ctx->avail_ref_cnt);
     const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
     const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);

@@ -1,12 +1,14 @@
 #ifndef C1_ENCODE_SEARCH_H
 #define C1_ENCODE_SEARCH_H
-#include "encode/types.h"
-#include "util/pixbuf.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "types.h"
+
+#include "encode/types.h"
+#include "util/log.h"
+#include "util/pixbuf.h"
 
 // --- search utils ---
 
@@ -20,22 +22,35 @@ int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
  @return the merged rdstat
  */
 c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
-/** check if intra mode info is equal to skip redundant cands?
+
+/** check if intra mode info is equal to skip redundant cands
+ @return bool result
  */
 int c1enc_mi_intra_eq(const c1enc_mi_intra_t *a, const c1enc_mi_intra_t *b);
-/** check if inter mode info is equal to skip redundant cands?
- */
+/** similar to @ref c1enc_mi_intra_eq */
 int c1enc_mi_inter_eq(const c1enc_mi_inter_t *a, const c1enc_mi_inter_t *b);
-/** bubble-sort new intra predict cand into block's candidate array, maintain its order.
+
+/** check if the intra cand already exists
+ @return bool result
  */
+int c1enc_block_has_intra_cand(const c1enc_block_t *b, const c1enc_mi_intra_t *mi);
+/** similar to @ref c1enc_block_has_intra_cnad */
+int c1enc_block_has_inter_cand(const c1enc_block_t *b, const c1enc_mi_inter_t *mi);
+
+/** bubble-sort new intra predict cand into block's candidate array, maintain its order. */
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat);
-/** bubble-sort new inter predict cand into block's candidate array, maintain its order.
- */
+/** similar to @ref c1enc_mi_add_intra_cand */
 int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, const c1enc_rdstat_t *stat);
+
 /** decide the best prediction mode from intra and inter predict candidates and store in some fields in block_t. if
  * relevant block field is deprecated, remove this.
  */
-int c1enc_part_gather_rdstat(c1enc_partition_t *p, int depth);
+int c1enc_part_gather_rdstat(c1enc_partition_t *p);
+/** gather pred type */
+int c1enc_block_gather_pred_type(c1enc_block_t *b);
+/** gather residual to b->p[ci].diff. this should be called after gather pred_type */
+int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx,
+                                uint8_t ref_id);
 
 // --- search options ---
 // a all-in-one option struct
@@ -48,7 +63,7 @@ typedef struct {
     uint8_t inter_sad_subsamp_mask; // 2x2 subsample mask, e.g. [msb] 1...10...0. index to this mask is abs(x)+abs(y)
     uint8_t inter_smooth_lambda;    // m = (sad|sad_subsamp) + lambda*(abs(x)+abs(y))/4
     uint8_t inter_newcand_cnt;      // new candidates from search result to add to block's inter cands
-    uint8_t inter_ref_idx;          // index of ref frame in encoder context
+    uint8_t inter_ref_idx; // index of ref frame in encoder context, note the index in array is avail_frame_cnt-ref_id
     // - intra search option
     uint8_t try_intra;          // intra search switch
     uint8_t intra_try_uv;       // try a different prediction mode for uv channels
@@ -71,6 +86,7 @@ typedef struct {
     // - max SAD of a block, may be fixed fraction of frame
     uint32_t thre_sad_max_b;
 } c1enc_search_option_t;
+
 /** option validator
  */
 void c1enc_search_option_validate(const c1enc_search_option_t *opt);

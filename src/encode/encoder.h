@@ -7,7 +7,8 @@
     - foreach super block:
         - try palette mode at super block level. case sufficient, skip others (unimpl).
         - search limited intra/inter prediction modes.
-        - try merge, then try divide to come with partition decision.
+        - try merge, before or after gather and update desired SAD threshold.
+        - try divide to come with partition decision.
         - gather residuals(diff between origin and prediction)
         - search limited transform types (maybe only dct-dct).
         - decide quantization step from coefficients considering rate and distortion constraint.

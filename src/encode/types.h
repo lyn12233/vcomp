@@ -11,6 +11,7 @@ key definitions:
 extern "C" {
 #endif
 
+#include "util/log.h"
 #include "util/pixbuf.h"
 
 #include <stdint.h>
@@ -18,7 +19,7 @@ extern "C" {
 // #define C1_ENC_SB_SZ 64
 // #define C1_ENCODE_MAX_PART_CNT 4
 #define C1_ENC_REF_FRAME_CNT 16
-#define C1_ENC_INTRA_CAND_CNT 2
+#define C1_ENC_INTRA_CAND_CNT 4
 #define C1_ENC_INTER_CAND_CNT 2
 #define C1_SIZE_CNT 4 // 8x8 ... 64x64
 
@@ -199,7 +200,7 @@ typedef struct {
 typedef struct {
     C1_PRED_MODE mode;
     int8_t ref_frame;
-    c1enc_mv_t mv, mvd;
+    c1enc_mv_t mv; // store the whole mv instead of mvd to reduce reference overhead
 } c1enc_mi_inter_t;
 
 struct c1enc_block_s {
@@ -296,6 +297,12 @@ static int64_t c1_clamp64(int64_t a, int64_t min_, int64_t max_) {
 }
 static int16_t c1_clamp16(int16_t a, int16_t min_, int16_t max_) {
     return a < min_ ? min_ : a > max_ ? max_ : a;
+}
+/** ref id to array index */
+static const c1_pixbuf_t *c1enc_ctx_frame_at(const c1enc_ctx_t *ctx, const c1_pixbuf_t *pix, uint8_t ref_id) {
+    int idx = (int)ctx->avail_ref_cnt - ref_id;
+    assert_fatal(idx >= 0 && idx <= ctx->avail_ref_cnt);
+    return idx == ctx->avail_ref_cnt ? pix : ctx->ref_frames + idx;
 }
 
 #define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
