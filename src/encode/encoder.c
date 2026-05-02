@@ -326,7 +326,11 @@ int c1enc_block_validate(c1enc_block_t *b) {
 }
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Block [%dx%d, (+%d,+%d)] (\r\n", c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff);
+    fprintf(f, "Block [%dx%d, (+%d,+%d)] ", c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff);
+    if (b->pred_type_determined) {
+        fprintf(f, "[best_pred=%s] ", b->pred_type == C1_PRED_INTRA ? "intra" : "inter");
+    }
+    fprintf(f, "(\r\n");
     // for (int ci = 0; ci < 3; ci++) {
     //     c1__print_ind(f, ind + 4);
     //     fprintf(f, "Plane [%c] (\r\n", "yuv"[ci]);
@@ -491,4 +495,29 @@ c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
         assert_fatal(ref);
         return ref->mv;
     }
+}
+
+// --- vis ---
+
+static void c1enc__get_dif_part(c1_pixbuf_t *pix, const c1enc_partition_t *p) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc__get_dif_part(pix, p->parts[i]);
+        }
+    } else {
+        c1enc_block_t *b = p->b;
+        for (int i = 0; i < c1_sz2hgt(p->size); i++) {
+            for (int j = 0; j < c1_sz2wid(p->size); j++) {
+                int16_t *ptr = c1_pixbuf_get(pix, i + p->y, j + p->x);
+                for (int ci = 0; ci < 3; ci++) {
+                    ptr[ci] = b->p[ci].diff[i * c1_sz2wid(p->size) + j];
+                }
+            }
+        }
+    }
+}
+c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb) {
+    c1_pixbuf_t res = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
+    c1enc__get_dif_part(&res, sb->root);
+    return res;
 }

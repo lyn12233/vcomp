@@ -10,7 +10,9 @@ extern "C" {
 #include "util/log.h"
 #include "util/pixbuf.h"
 
-// --- search utils ---
+// --- --- search utils --- ---
+
+// --- rdstat ops ---
 
 /** compare rdstat fitness, result>0 means "a" is better.
  considers mactrices' existence, in order fit, dis, rate, sse, sad.
@@ -22,6 +24,8 @@ int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
  @return the merged rdstat
  */
 c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b);
+
+// --- mode info ops ---
 
 /** check if intra mode info is equal to skip redundant cands
  @return bool result
@@ -42,15 +46,40 @@ int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, con
 /** similar to @ref c1enc_mi_add_intra_cand */
 int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, const c1enc_rdstat_t *stat);
 
-/** decide the best prediction mode from intra and inter predict candidates and store in some fields in block_t. if
- * relevant block field is deprecated, remove this.
+// --- --- info collection --- ---
+
+/** decide the best prediction mode from intra and inter predict candidates and store in some fields in block_t.
  */
 int c1enc_part_gather_rdstat(c1enc_partition_t *p);
 /** gather pred type */
 int c1enc_block_gather_pred_type(c1enc_block_t *b);
 /** gather residual to b->p[ci].diff. this should be called after gather pred_type */
-int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx,
-                                uint8_t ref_id);
+int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, uint8_t ref_id);
+static int c1enc_part_gather_pred_type(c1enc_partition_t *p) {
+    int r;
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            if ((r = c1enc_part_gather_pred_type(p->parts[i])) < 0)
+                return r;
+        }
+        return 0;
+    } else {
+        return c1enc_block_gather_pred_type(p->b);
+    }
+}
+static int c1enc_part_gather_residual(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx,
+                                      uint8_t ref_id) {
+    int r;
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            if ((r = c1enc_part_gather_residual(p->parts[i], pix, ctx, ref_id)) < 0)
+                return r;
+        }
+        return 0;
+    } else {
+        return c1enc_block_gather_residual(p->b, pix, ctx, ref_id);
+    }
+}
 
 // --- search options ---
 // a all-in-one option struct

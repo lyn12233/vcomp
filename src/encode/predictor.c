@@ -26,7 +26,7 @@
         - intra pred without cfl:   300
         - inter pred:               380
         - intra cfl:                400
-        - all in one:               460        
+        - all in one:               460
 */
 
 // --- utils ---
@@ -82,7 +82,7 @@ static void c1pd__v_pred(const int16_t *input, int16_t *output,     //
                          const int16_t *above, const int16_t *left, //
                          uint8_t h, uint8_t w) {
     for (int i = 0; i < h; i++) {
-        memcpy(output + w * i, above, w);
+        memcpy(output + w * i, above, w * sizeof(int16_t));
     }
 }
 static void c1pd__h_pred(const int16_t *input, int16_t *output,     //

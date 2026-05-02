@@ -3,6 +3,7 @@
 #include "mem.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -101,6 +102,18 @@ c1_pixbuf_t c1_pixbuf_cvt(const c1_pixbuf_t *in, C1_PIXBUF_TYPE type) {
                     int16_t *p_out = c1_pixbuf_get(&res, y, x);
                     for (int ci = 0; ci < 3; ci++) {
                         p_out[ci] = p_in[ci];
+                    }
+                }
+            }
+        }
+    } else if (in->type == C1_PIXBUF_C3I16) {
+        if (type == C1_PIXBUF_C3I8) {
+            for (int y = 0; y < in->h; y++) {
+                for (int x = 0; x < in->w; x++) {
+                    const int16_t *p_in = c1_pixbuf_getc(in, y, x);
+                    uint8_t *p_out = c1_pixbuf_get(&res, y, x);
+                    for (int ci = 0; ci < 3; ci++) {
+                        p_out[ci] = (uint8_t)(p_in[ci] < 0 ? 0 : p_in[ci] > 255 ? 255 : p_in[ci]);
                     }
                 }
             }

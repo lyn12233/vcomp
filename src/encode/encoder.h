@@ -102,6 +102,8 @@ void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);
 
 // --- --- super block info/context accessing and referencing --- ---
 
+// --- context management ---
+
 /** clear an existing entry in context. should be internal func.
  */
 int c1enc_ctx_clear_entry(c1enc_ctx_t *ctx, uint8_t idx);
@@ -117,6 +119,9 @@ int c1enc_ref_from_part(c1enc_ref_t *ref, const c1enc_partition_t *p);
 /** destructor of ref_t
  */
 int c1enc_ref_clear(c1enc_ref_t *ref);
+
+// --- context access ---
+
 /** get a ref_t at the position in ctx specified by ref_id and frame location specified by sb_y,
  sb_x, y and x.
  @param ref_id 1..16 the ref frame index from the current frame.
@@ -125,12 +130,20 @@ c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_
 /** get a block_t in frame at the location specified by sb_y, sb_x, y and x.
  */
 c1enc_block_t *c1enc_block_at(c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x);
+
+// --- get reference mv ---
+
 /** get reference motion vector at given frame and location.
  this may be used in gathering mv candidates for inter prediction encoding.
  @param ref_id 0 for the current frame, >0 for a temporal ref frame
 */
 c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
                            uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id);
+
+// --- vis ---
+
+/** get 64x64 c3i16 pixels about dif buf */
+c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb);
 
 #ifdef __cplusplus
 }

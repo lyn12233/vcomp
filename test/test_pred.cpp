@@ -1,12 +1,17 @@
 #include "encode/encoder.h"
+#include "encode/predictor.h"
 #include "encode/search.h"
 #include "encode/types.h"
 #include "util/pixbuf.h"
 
 #include <assert.h>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
 
 using std::cout;
@@ -63,9 +68,41 @@ int main() {
 
     assert_fatal(c1enc_search_merge(sb->root, &frm.pix, &ctx, &opt) >= 0);
     assert_fatal(c1enc_search_divide(sb->root, &frm.pix, &ctx, &opt) >= 0);
-    // c1enc_sb_repr(stdout, sb, 0);
     assert_fatal(c1enc_part_gather_rdstat(sb->root) >= 0);
     info_("total SAD: %u", sb->root->stats.sad);
+    assert_fatal(c1enc_part_gather_pred_type(sb->root) >= 0);
+    c1enc_sb_repr(stdout, sb, 0);
 
+    assert_fatal(c1enc_part_gather_residual(sb->root, &frm.pix, &ctx, 0) >= 0);
+    c1_pixbuf_t dif = c1enc_get_dif_sb(sb);
+    for (int i = 0; i < 64; i++) {
+        for (int j = 0; j < 64; j++) {
+            for (int ci = 0; ci < 3; ci++) {
+                int16_t *ptr = c1_pixbuf_geti16(&dif, i, j) + ci;
+                *ptr = (*ptr) > 0 ? (*ptr) : (int16_t)-(*ptr);
+            }
+        }
+    }
+    c1_pixbuf_t dif8 = c1_pixbuf_cvt(&dif, C1_PIXBUF_C3I8);
+    cv::Mat im3(64, 64, CV_8UC3);
+    memcpy(im3.data, dif8.buf->ptr, 64 * 64 * 3);
+    cv::resize(im3, im3, {256, 256});
+    cv::imshow("pred", im3);
+    // cv::waitKey();
+
+    c1_pixbuf_clear(&pix);
+    c1_pixbuf_clear(&pix16);
+    c1_pixbuf_clear(&dif);
+    c1_pixbuf_clear(&dif8);
     c1enc_frame_clear(&frm);
+
+    // test2: intra dir pred test 8x8
+    int16_t above[16] = {0, 0, 0, 0, 0, 255, 255, 255, 255};
+    int16_t left[16] = {0, 0, 0, 0, 0, 255, 255, 255, 255};
+    cv::Mat pred_result(8, 8, CV_16UC1);
+    c1pd_intra_preds[C1_PRED_PAETH - C1_PRED_DC - 1][C1_SZ_8_8](NULL, (int16_t *)pred_result.data, above + 1, left + 1);
+    cout << pred_result;
+    // cv::resize(pred_result, pred_result, {256, 256});
+    // cv::imshow("pred result", pred_result);
+    cv::waitKey();
 }
