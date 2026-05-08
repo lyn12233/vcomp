@@ -46,10 +46,10 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     uint16_t ew = C1_ROUND_UP(pix->w, 64) * 64;
     uint16_t hb = eh / 64, wb = ew / 64;
 
-    if (eh != frm->inf.hgt_per_sb || ew != frm->inf.wid_per_sb) {
+    if (eh != frm->hgt_per_sb || ew != frm->wid_per_sb) {
         // frame size (after rounding) has changed.
         // 1. clear sb
-        for (int i = 0; i < frm->inf.hgt_per_sb * frm->inf.wid_per_sb; i++) {
+        for (int i = 0; i < frm->hgt_per_sb * frm->wid_per_sb; i++) {
             c1enc_sb_clear(frm->super_blocks + i);
         }
         // 2. new sb. malloc and init with {0}
@@ -67,11 +67,11 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         }
 
         // 4. init info fields
-        frm->inf.frame_type = C1_FRAME_I;
-        frm->inf.hgt = eh;
-        frm->inf.wid = ew;
-        frm->inf.hgt_per_sb = hb;
-        frm->inf.wid_per_sb = wb;
+        frm->frame_type = C1_FRAME_I;
+        frm->hgt = eh;
+        frm->wid = ew;
+        frm->hgt_per_sb = hb;
+        frm->wid_per_sb = wb;
     }
 
     // paste pix to frame
@@ -88,7 +88,7 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     return 0;
 }
 int c1enc_frame_clear(c1enc_frame_t *frm) {
-    for (int i = 0; i < frm->inf.hgt_per_sb * frm->inf.wid_per_sb; i++) {
+    for (int i = 0; i < frm->hgt_per_sb * frm->wid_per_sb; i++) {
         c1enc_sb_clear(frm->super_blocks + i);
     }
     if (frm->super_blocks)
@@ -98,12 +98,12 @@ int c1enc_frame_clear(c1enc_frame_t *frm) {
     return 0;
 }
 int c1enc_frame_validate(const c1enc_frame_t *frm) {
-    if (frm->pix.h != frm->inf.hgt || frm->pix.w != frm->inf.wid || frm->inf.hgt != frm->inf.hgt_per_sb * 64
-        || frm->inf.wid != frm->inf.wid_per_sb * 64) {
+    if (frm->pix.h != frm->hgt || frm->pix.w != frm->wid || frm->hgt != frm->hgt_per_sb * 64
+        || frm->wid != frm->wid_per_sb * 64) {
         warning2("frame with invalid sizes");
         return -1;
     }
-    for (int i = 0; i < frm->inf.hgt_per_sb * frm->inf.wid_per_sb; i++) {
+    for (int i = 0; i < frm->hgt_per_sb * frm->wid_per_sb; i++) {
         int res = c1enc_sb_validate(frm->super_blocks + i);
         if (res < 0) {
             warning2("super block validation failed");
@@ -115,13 +115,13 @@ int c1enc_frame_validate(const c1enc_frame_t *frm) {
 void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
     c1_pixbuf_repr(stdout, &frm->pix);
     c1__print_ind(f, ind);
-    fprintf(f, "Frame [%s, bqi=%d, height=%dx64, width=%dx64](\r\n", frm->inf.frame_type == C1_FRAME_P ? "P" : "I",
-            frm->inf.base_q_index, frm->inf.hgt_per_sb, frm->inf.wid_per_sb);
-    for (int i = 0; i < frm->inf.hgt_per_sb; i++) {
-        for (int j = 0; j < frm->inf.wid_per_sb; j++) {
+    fprintf(f, "Frame [%s, bqi=%d, height=%dx64, width=%dx64](\r\n", frm->frame_type == C1_FRAME_P ? "P" : "I",
+            frm->q_index, frm->hgt_per_sb, frm->wid_per_sb);
+    for (int i = 0; i < frm->hgt_per_sb; i++) {
+        for (int j = 0; j < frm->wid_per_sb; j++) {
             c1__print_ind(f, ind + 4);
             fprintf(f, "\"at [%d][%d]:\"\r\n", i, j);
-            c1enc_sb_repr(f, frm->super_blocks + i * frm->inf.wid_per_sb + j, ind + 4);
+            c1enc_sb_repr(f, frm->super_blocks + i * frm->wid_per_sb + j, ind + 4);
         }
     }
     c1__print_ind(f, ind);
@@ -302,12 +302,16 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     }
 
     // reset volatile attrs
+
     b->sb_y = sb_y, b->sb_x = sb_x;
     b->yoff = y, b->xoff = x;
     b->size = size;
-    b->tx_size = size; // ?
+
+    b->has_tx_cand = 0;
     b->intra_cand_cnt = 0;
     b->inter_cand_cnt = 0;
+    b->pred_type_determined=0;
+
     // assign buf in sb for planes
     for (int ci = 0; ci < 3; ci++) {
         b->p[ci].diff = sb->diff_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
@@ -389,7 +393,7 @@ int c1enc_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm) {
     const uint8_t idx = ctx->avail_ref_cnt - 1;
     ctx->ref_frames[idx] = c1_pixbuf_dupview(&frm->pix);
     // (2) create ref for each super block in frame
-    const uint16_t h = frm->inf.hgt_per_sb, w = frm->inf.wid_per_sb;
+    const uint16_t h = frm->hgt_per_sb, w = frm->wid_per_sb;
     ctx->sb_refs[idx] = malloc(sizeof(c1enc_ref_t) * h * w);
     assert_fatal(ctx->sb_refs[idx]);
     for (uint16_t sb_y = 0; sb_y < h; sb_y++) {
@@ -454,7 +458,7 @@ c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_
     assert_fatal(idx >= 0 && idx < ctx->avail_ref_cnt);
     const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
     const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
-    if (sb_y > h || sb_x > w) {
+    if (sb_y >= h || sb_x >= w) {
         return NULL;
     }
     c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * w + sb_x;
@@ -475,10 +479,10 @@ static c1enc_block_t *c1enc__block_at_fromp(c1enc_partition_t *p, uint8_t y, uin
     }
 }
 c1enc_block_t *c1enc_block_at(c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x) {
-    if (sb_y > frm->inf.hgt_per_sb || sb_x > frm->inf.wid_per_sb) {
+    if (sb_y > frm->hgt_per_sb || sb_x > frm->wid_per_sb) {
         return NULL;
     }
-    c1enc_partition_t *p = frm->super_blocks[sb_y * frm->inf.wid_per_sb + sb_x].root;
+    c1enc_partition_t *p = frm->super_blocks[sb_y * frm->wid_per_sb + sb_x].root;
     return c1enc__block_at_fromp(p, y, x);
 }
 

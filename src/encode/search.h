@@ -6,7 +6,7 @@ extern "C" {
 
 #include "types.h"
 
-#include "encode/types.h"
+#include "types.h"
 #include "util/log.h"
 #include "util/pixbuf.h"
 

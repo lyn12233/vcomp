@@ -16,9 +16,9 @@ extern "C" {
 */
 
 #define C1_TX1_SIZE_CNT 4 // 8,16,32,64
-#define C1_TX2_SIZE_CNT 4 // 8x8 ... 64x64
+#define C1_TX2_SIZE_CNT C1_SIZE_CNT // 8x8 ... 64x64
 #define C1_TX1_TYPE_CNT 7
-#define C1_TX2_TYPE_CNT 4
+#define C1_TX2_TYPE_CNT C1_TX_TYPE_CNT
 
 /** 1d tx function type.
  input and output are non identical buffers storing compact data.

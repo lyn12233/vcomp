@@ -36,10 +36,12 @@ extern "C" {
 
 // #define C1_ENC_SB_SZ 64
 // #define C1_ENCODE_MAX_PART_CNT 4
+// #define C1_ENC_TX_CAND_CNT 4
 #define C1_ENC_REF_FRAME_CNT 16
 #define C1_ENC_INTRA_CAND_CNT 4
 #define C1_ENC_INTER_CAND_CNT 2
-#define C1_SIZE_CNT 4 // 8x8 ... 64x64
+#define C1_SIZE_CNT 4    // 8x8 ... 64x64
+#define C1_TX_TYPE_CNT 4 // dct-dct ...
 
 // --- 2d size enums ---
 
@@ -168,16 +170,16 @@ struct c1enc_frame_s {
     // buffer
     c1_pixbuf_t pix;
 
-    struct {
-        C1_FRAME_TYPE frame_type;
+    C1_FRAME_TYPE frame_type;
 
-        uint8_t base_q_index;
+    uint8_t q_index;
+    int8_t q_index_delta;
 
-        uint16_t hgt;
-        uint16_t wid;
-        uint16_t hgt_per_sb;
-        uint16_t wid_per_sb;
-    } inf;
+    uint16_t hgt;
+    uint16_t wid;
+    uint16_t hgt_per_sb;
+    uint16_t wid_per_sb;
+
     struct c1enc_super_block_s *super_blocks;
 };
 typedef struct c1enc_frame_s c1enc_frame_t;
@@ -193,6 +195,7 @@ struct c1enc_super_block_s {
 
     uint16_t sb_y, sb_x; // super block is at y row and x col in frame
 
+    uint8_t q_index;
     int8_t q_index_delta;
 
     struct c1enc_partition_s *root;
@@ -220,6 +223,10 @@ typedef struct {
     int8_t ref_frame;
     c1enc_mv_t mv; // store the whole mv instead of mvd to reduce reference overhead
 } c1enc_mi_inter_t;
+typedef struct {
+    C1_2D_SZ tx_size;
+    C1_TX_2D_TYPE tx_type;
+} c1enc_tx_inf_t;
 
 struct c1enc_block_s {
     C1_2D_SZ size;
@@ -231,10 +238,10 @@ struct c1enc_block_s {
 
     // attrs for search result
 
-    // now assume tx_largest, tx size is the block size
-    // uint8_t wid_per_tx, hgt_per_tx;
-    C1_2D_SZ tx_size;
-    C1_TX_2D_TYPE tx_type;
+    // transform info
+    uint8_t has_tx_cand;
+    c1enc_tx_inf_t tx_inf;
+    c1enc_rdstat_t tx_stat;
 
     // predict mode search candidates
 
@@ -307,10 +314,16 @@ static int c1_pred_is_intra(C1_PRED_MODE mode) {
 static int16_t c1_abs_i16(int16_t a) {
     return a > 0 ? a : 0 - a;
 }
+static int32_t c1_abs_i32(int32_t a) {
+    return a > 0 ? a : 0 - a;
+}
 static int16_t c1_abs_dif_i16(int16_t a, int16_t b) {
     return a > b ? a - b : b - a;
 }
 static int64_t c1_clamp64(int64_t a, int64_t min_, int64_t max_) {
+    return a < min_ ? min_ : a > max_ ? max_ : a;
+}
+static int64_t c1_clamp32(int32_t a, int32_t min_, int32_t max_) {
     return a < min_ ? min_ : a > max_ ? max_ : a;
 }
 static int16_t c1_clamp16(int16_t a, int16_t min_, int16_t max_) {

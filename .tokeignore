@@ -5,3 +5,4 @@
 log*.txt
 /test/entenc.cpp
 ref/
+/src/encode/tables.*
