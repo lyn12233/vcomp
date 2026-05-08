@@ -1,23 +1,22 @@
 /** @file encoder.h
  conceived encoder process:
-  - for a new frame, init with 16x16 block size, which is the desired size.
-  - to encode a frame:
-    - decide frame type: i frame if p frame exceeds certain count or scene change detected
-    - decide reference frame case a p frame.
-    - foreach super block:
-        - try palette mode at super block level. case sufficient, skip others (unimpl).
-        - search limited intra/inter prediction modes.
-        - try merge, before or after gather and update desired SAD threshold.
-        - try divide to come with partition decision.
-        - gather residuals(diff between origin and prediction)
-        - search limited transform types (maybe only dct-dct).
-        - decide quantization step from coefficients considering rate and distortion constraint.
-        - negotiate base qi, qi, qi deltas at frame level.
-        - search transform types given qi.
-        - calculate quantized coefficients and dequantized coefficients
+    - for a new frame, init with 16x16 block size, which is the desired size.
+    - to encode a frame:
+        - decide frame type: i frame if p frame exceeds certain count or scene change detected
+        - decide reference frame case a p frame.
+        - foreach super block:
+            - try palette mode at super block level. case sufficient, skip others (unimpl).
+            - search limited intra/inter prediction modes (search.c).
+            - try merge, before or after gather and update desired SAD threshold (search.c).
+            - try divide to come with partition decision (search.c).
+            - gather residuals(diff between origin and prediction) (search.c).
+            - search transform types, obtain coefficients (quant.c).
+            - decide quantization step (quant.c).
+            - negotiate base qi, qi, qi deltas at frame level (quant.c).
+            - calculate quantized coefficients and dequantized coefficients (quant.c).
+            - inverse transform (recon.c).
+            - push refernce frame to context
         - write to bitstream
-        - inverse transform
-        - push refernce frame to context
 */
 #ifndef C1_ENCODE_ENCODER_H
 #define C1_ENCODE_ENCODER_H
@@ -69,6 +68,9 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
 int c1enc_sb_clear(c1enc_super_block_t *sb);
 int c1enc_sb_validate(const c1enc_super_block_t *sb);
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind);
+
+int c1enc_sb_require_coef_bufs(c1enc_super_block_t*sb);
+int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t*sb);
 
 // --- partition ---
 

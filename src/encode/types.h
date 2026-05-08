@@ -190,8 +190,7 @@ typedef struct c1enc_frame_s c1enc_frame_t;
 struct c1enc_super_block_s {
     // buffer
     int16_t diff_buf[64 * 64 * 3];
-    int32_t coef_buf[64 * 64 * 3];
-    int32_t qcoef_buf[64 * 64 * 3];
+    int32_t* coef_bufs; // coef, qcoef and dqcoef 3*3*64*64
 
     uint16_t sb_y, sb_x; // super block is at y row and x col in frame
 
@@ -207,7 +206,8 @@ struct c1enc_plane_s {
     // pred is measured by sad and tx is measured by ??
     int16_t *diff;  // residual owned by sb. represents the best pred and used by tx
     int32_t *coef;  // coef is the tx result. represents best tx, used for qi refinement
-    int32_t *qcoef; // quantized coef. used for both encoding and reconstruction
+    int32_t *qcoef; // quantized coef. used for both encoding(eob calc) and reconstruction
+    int32_t *dqcoef; // dequantized coef. used for reconstruction.
 };
 typedef struct c1enc_plane_s c1enc_plane_t;
 

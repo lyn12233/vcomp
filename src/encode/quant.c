@@ -1,4 +1,5 @@
 #include "quant.h"
+#include "encoder.h"
 #include "math/transform.h"
 #include "tables.h"
 #include "types.h"
@@ -8,7 +9,6 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
-
 
 static uint8_t c1tx__get_scan_id(C1_TX_2D_TYPE tx_type) {
     static const uint8_t lookup[C1_TX_TYPE_CNT] = {0 /*dct-dct*/, 1 /*h-dct*/, 2 /*v-dct*/, 0};
@@ -98,8 +98,8 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
     return 0;
 }
 
-int c1tx_search_b(c1enc_block_t *b, c1tx_search_option_t opt) {
-    // allocate temp buffers: temp_in+temp_out, together, i32[bh*bw*3]+i16[txh*txw]<=...
+static int c1tx__search_b(c1enc_block_t *b, c1tx_search_option_t opt) {
+    // allocate temp buffers: temp_in+temp_out, together, i32[bh*bw*3]+i16[txh*txw]<=bh*bw*(3*4+2)
     const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
     int32_t *temp = malloc(area * (3 * sizeof(int32_t) + sizeof(int16_t)));
     assert_fatal(temp);
@@ -117,15 +117,32 @@ int c1tx_search_b(c1enc_block_t *b, c1tx_search_option_t opt) {
     return 0;
 }
 
+static int c1tx__search_p(c1enc_partition_t *p, c1tx_search_option_t opt) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1tx__search_p(p->parts[i], opt);
+        }
+    } else {
+        c1tx__search_b(p->b, opt);
+    }
+    return 0;
+}
+
+int c1tx_search_sb(c1enc_super_block_t *sb, c1tx_search_option_t opt) {
+    c1enc_sb_require_coef_bufs(sb);
+    c1tx__search_p(sb->root, opt);
+    return 0;
+}
+
 static void c1__invert_quant(uint16_t *quant, uint16_t *shift, uint32_t q) {
     // (1) get l=floorlog2
     uint32_t tmp = q, l = 0;
     while (tmp > 1)
         tmp >>= 1, l++;
-    // (2) calc mult 16 bits renmant which is 1.*2**(16) -> 0.*2**16, and avd 0
-    uint32_t m = (1 << (16 + l)) / q + 1;
-    *quant = (uint16_t)(m - (1 << 16));
-    *shift = (uint16_t)(16 - l);
+    // (2) calc 16 bits mult which is 1.*2**(16) -> 0.*2**16, and avd 0
+    uint32_t m = (1 << (16 + l)) / q + 1; // 16+l: fraction bits + shift
+    *quant = (uint16_t)(m - (1 << 16));   // multiplier to remnant
+    *shift = (uint16_t)l;                 // left shift l
 }
 
 void c1_lookup_init_q_inf() {
@@ -135,6 +152,8 @@ void c1_lookup_init_q_inf() {
                              c1_lookup_q_dc[ci][qi]);
             c1__invert_quant(&c1_lookup_q_ac_inf[ci][qi].mult, &c1_lookup_q_ac_inf[ci][qi].shift,
                              c1_lookup_q_ac[ci][qi]);
+            c1_lookup_q_dc_inf[ci][qi].qstep = c1_lookup_q_dc[ci][qi];
+            c1_lookup_q_ac_inf[ci][qi].qstep = c1_lookup_q_ac[ci][qi];
         }
     }
 }
@@ -195,7 +214,84 @@ int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp) {
     return 0;
 }
 int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp) {
-    uint16_t q = c1enc__est_q_v1(sb->coef_buf, 12, qp);
+    uint16_t q = c1enc__est_q_v1(sb->coef_bufs + 0, 12, qp);
     sb->q_index = c1enc__bisect_qi(c1_lookup_q_dc[0], q, 0, 255);
+    return 0;
+}
+
+/** core quantization and dequant logics.
+ see [libaom]/aom_dsp/quantize.c:50 (aom_quantize_b_adaptive_helper_c) standard impl considers specialized zero bound,
+ qmatrix weight and eob adjust, which are not considered here for simplicity. variable desc: (1) coef_ptr: input c; (2)
+ quant_ptr: mult remnant q.mult; (3) round_ptr: rounding adjustment with 5 bit fraction, for small qi is 1/2; (4)
+ quant_shift_ptr: the shift multiplier without log2 op; (5) dequant_ptr: actually q.qstep; (6) qcoef_ptr and dqcoef_ptr:
+ output.
+
+ @param c[in] coefficient
+ @param q[in] quant info
+ @param qc[out] quantized coef
+ @param dqc[out] dequantized coef
+
+ todo: add a log_scale?
+*/
+static void c1__quantize_pix(int32_t c, c1_quant_t q, int32_t *qc, int32_t *dqc) {
+    const int sign = c < 0 ? -1 : 0;
+    const int abs_c = c < 0 ? -c : c; // also (c^sign)-sign
+    // (1) rounding and early exit
+    if (abs_c < q.qstep / 2) {
+        *qc = *dqc = 0;
+        return;
+    }
+    int64_t tmp64 = c1_clamp32(abs_c + q.qstep / 2, 0, INT16_MAX);
+    // (2) divide by qstep
+    tmp64 = (tmp64 * q.mult >> 16) + tmp64;
+    int32_t tmp32 = (int32_t)(tmp64 >> q.shift);
+    *qc = (tmp32 ^ sign) - sign; // reserve the sign, fast alg
+    // (3) dequantize
+    tmp32 = tmp32 * q.qstep;
+    *dqc = (tmp32 ^ sign) - sign;
+}
+
+static int c1enc__quantize_b(c1enc_block_t *b, uint8_t qi) {
+    const int tx_hgt = c1_sz2hgt(b->tx_inf.tx_size), tx_wid = c1_sz2wid(b->tx_inf.tx_size);
+    const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+
+    for (uint8_t ci = 0; ci < 3; ci++) {
+        // per channel data: c, qc, dqc and quant info
+        int32_t *coef = b->p[ci].coef, *qcoef = b->p[ci].qcoef, *dqcoef = b->p[ci].dqcoef;
+        c1_quant_t q_dc = c1q_get_q_inf(0, ci, qi);
+        c1_quant_t q_ac = c1q_get_q_inf(1, ci, qi);
+
+        // traverse tx blocks
+        for (int bi = 0; bi < bh; bi += tx_hgt) {
+            for (int bj = 0; bj < bw; bj += tx_wid) {
+
+                // traverse in tx block
+                for (int i = 0; i < tx_hgt; i++) {
+                    for (int j = 0; j < tx_wid; j++) {
+                        c1_quant_t q = i == 0 && j == 0 ? q_dc : q_ac;
+                        int idx = (bi + i) * bw + bj + j; // index in block buf
+                        c1__quantize_pix(coef[idx], q, qcoef + idx, dqcoef + idx);
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+static int c1enc__quantize_p(c1enc_partition_t *p, uint8_t qi) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc__quantize_p(p->parts[i], qi);
+        }
+    } else {
+        c1enc__quantize_b(p->b, qi);
+    }
+    return 0;
+}
+
+int c1enc_quantize_sb(c1enc_super_block_t *sb) {
+    assert_fatal_ex(sb->coef_bufs, "call to quantizer but coef(bufs) do not exist");
+    c1enc__quantize_p(sb->root, sb->q_index);
     return 0;
 }

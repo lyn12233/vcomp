@@ -7,10 +7,7 @@
     - qcoef>NUM_BASE_LEVELS: coef_base=NUM_BASE_LEVELS+1,
         - multiple br(base range)'s [BR_SIZE,BR_SIZE,...,(<BR_SIZE)]
     - qcoef>NUM_BASE_LEVELS+COEF_BASE_RANGE: golomb_len_bits+golomb_data_bits
- (4) bit rate estimation: ?
-    - based on default tx: dct-dct
-    - extract coef dist to a hist
-    - cost of each syntaxes is the entropy given est cdf, not considering pixel's ctx
+ (4) bit rate estimation: NOT IMPL currently only look at eob to compare txfms
 */
 #ifndef C1_ENCODE_QUANT_H
 #define C1_ENCODE_QUANT_H
@@ -38,25 +35,12 @@ typedef struct {
     uint16_t qstep;
 } c1tx_search_option_t;
 
-int c1tx_search_b(c1enc_block_t *b, c1tx_search_option_t opt);
-static int c1tx_search_part(c1enc_partition_t *p, c1tx_search_option_t opt) {
-    int r = 0;
-    if (p->is_partition) {
-        for (int i = 0; i < 4; i++) {
-            if ((r = c1tx_search_part(p->parts[i], opt)) < 0)
-                return r;
-        }
-    } else {
-        if ((r = c1tx_search_b(p->b, opt)) < 0)
-            return r;
-    }
-    return r;
-}
+int c1tx_search_sb(c1enc_super_block_t *sb, c1tx_search_option_t opt);
 
 // --- quant ---
 
 typedef struct {
-    uint16_t shift, mult;
+    uint16_t shift, mult, qstep;
 } c1_quant_t;
 
 extern uint8_t c1_lookup_q_inf_inited;
@@ -72,8 +56,25 @@ static c1_quant_t c1q_get_q_inf(uint8_t ac, uint8_t plane, uint8_t idx) {
     return ac ? c1_lookup_q_ac_inf[plane][idx] : c1_lookup_q_dc_inf[plane][idx];
 }
 
+/** gather q index at frame level.
+ in libaom, the q index is determined by global matrices and history qi's. however this empirical model is complex to
+ adapt. thus currently this func traverse super blocks gathering qi by a simple but fixed qp controlled model. the frame
+ base qi is takes the average and the superblock delta qi is calculated, qi clampped.
+
+ @param frm frame instance
+ @param qp quantization parameter, may be a part of a larger parm group
+*/
 int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp);
+/** gather i index at superblock level.
+ 
+ currently impl 2 fixed qp control model:
+    - qstep/2 approx mean-3*qp*std
+    - ? todo
+ after qstep is given, qi is bisect'ed from a lookup table defiend in av1.
+ */
 int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp);
+
+int c1enc_quantize_sb(c1enc_super_block_t *sb);
 
 #ifdef __cplusplus
 }

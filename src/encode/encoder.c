@@ -133,7 +133,14 @@ void c1enc_frame_repr(FILE *f, const c1enc_frame_t *frm, int ind) {
 int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t sb_y, uint16_t sb_x) {
     sb->sb_y = sb_y, sb->sb_x = sb_x;
 
+    // volatile attrs
+
     sb->q_index_delta = 0;
+    // coef_bufs may not be maintained. just to assure
+    if (sb->coef_bufs) {
+        warning("coef buf expects to be clear");
+        c1enc_sb_dealloc_coef_bufs(sb);
+    }
 
     if (!sb->root) {
         // init, create a mb tree
@@ -147,9 +154,10 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
     return 0;
 }
 int c1enc_sb_clear(c1enc_super_block_t *sb) {
-    int res;
-    if ((res = c1enc_partition_clear(sb->root)) < 0 || //
-        (res = c1_mpool_dealloc(&c1enc_part_pool, sb->root)) < 0)
+    int res = 0;
+    if ((res = c1enc_partition_clear(sb->root)) < 0 ||              //
+        (res = c1_mpool_dealloc(&c1enc_part_pool, sb->root)) < 0 || //
+        (res = c1enc_sb_dealloc_coef_bufs(sb)) < 0)
         return res;
     return 0;
 }
@@ -174,6 +182,56 @@ void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind) {
         c1__print_ind(f, ind);
         fprintf(f, "Partition [NULL]");
     }
+}
+
+static int c1enc__part_set_coef_bufs(c1enc_partition_t *p, //
+                                     int32_t *coef_bufs, int32_t *qcoef_bufs, int32_t *dqcoef_bufs) {
+    const int h = c1_sz2hgt(p->size), w = c1_sz2wid(p->size);
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc__part_set_coef_bufs(p->parts[i], coef_bufs, qcoef_bufs, dqcoef_bufs);
+        }
+    } else {
+        c1enc_block_t *b = p->b;
+        for (int ci = 0; ci < 3; ci++) {
+            b->p[ci].coef = coef_bufs + p->buf_offs * 3 + h * w * ci;
+            b->p[ci].qcoef = qcoef_bufs + p->buf_offs * 3 + h * w * ci;
+            b->p[ci].dqcoef = dqcoef_bufs + p->buf_offs * 3 + h * w * ci;
+        }
+    }
+    return 0;
+}
+static int c1enc__part_unset_coef_bufs(c1enc_partition_t *p) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc__part_unset_coef_bufs(p->parts[i]);
+        }
+    } else {
+        c1enc_block_t *b = p->b;
+        for (int ci = 0; ci < 3; ci++) {
+            b->p[ci].coef = NULL;
+            b->p[ci].qcoef = NULL;
+            b->p[ci].dqcoef = NULL;
+        }
+    }
+    return 0;
+}
+int c1enc_sb_require_coef_bufs(c1enc_super_block_t *sb) {
+    if (sb->coef_bufs)
+        return 0;
+    int32_t *coef_bufs = malloc(3 * 3 * 64 * 64 * sizeof(int32_t));
+    assert_fatal(coef_bufs);
+    sb->coef_bufs = coef_bufs;
+    c1enc__part_set_coef_bufs(sb->root, coef_bufs, coef_bufs + 3 * 64 * 64, coef_bufs + 2 * 3 * 64 * 64);
+    return 0;
+}
+int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t *sb) {
+    if (!sb->coef_bufs)
+        return 0;
+    free(sb->coef_bufs);
+    sb->coef_bufs = NULL;
+    c1enc__part_unset_coef_bufs(sb->root);
+    return 0;
 }
 
 // --- partition ---
@@ -310,13 +368,14 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     b->has_tx_cand = 0;
     b->intra_cand_cnt = 0;
     b->inter_cand_cnt = 0;
-    b->pred_type_determined=0;
+    b->pred_type_determined = 0;
 
     // assign buf in sb for planes
     for (int ci = 0; ci < 3; ci++) {
         b->p[ci].diff = sb->diff_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
-        b->p[ci].coef = sb->coef_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
-        b->p[ci].qcoef = sb->qcoef_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
+        b->p[ci].coef = NULL;
+        b->p[ci].qcoef = NULL;
+        b->p[ci].dqcoef = NULL;
     }
     return 0;
 }

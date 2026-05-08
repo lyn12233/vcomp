@@ -43,7 +43,7 @@ int main() {
     c1_pixbuf_t pix16 = c1_pixbuf_cvt(&pix, C1_PIXBUF_C3I16);
     c1enc_frame_t frm = {0};
     c1enc_frame_update(&frm, &pix16);
-    assert_fatal(frm.inf.hgt_per_sb == 2 && frm.inf.wid_per_sb == 2);
+    assert_fatal(frm.hgt_per_sb == 2 && frm.wid_per_sb == 2);
     c1enc_super_block_t *sb = frm.super_blocks + 2;
     c1enc_ctx_t ctx = {0};
 
