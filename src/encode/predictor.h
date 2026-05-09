@@ -34,7 +34,7 @@ extern c1pd_intra_func_t c1pd_intra_recons[C1_PD_INTRA_CNT - 1][C1_SIZE_CNT];
 extern c1pd_intra_func_t c1pd_dc_recons[2][2][C1_SIZE_CNT];
 
 typedef struct {
-    C1_2D_SZ size;
+    // C1_2D_SZ size; unused. this is block size
     C1_PRED_MODE mode;
     uint8_t ci; // color idx: yuv
     uint8_t use_cfl;
@@ -58,9 +58,14 @@ typedef struct {
 int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
                  const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t *cfl);
 
-/** perform inter/intra reconstruction
- */
-int c1pd_reconstruct(c1_pixbuf_t *input, c1_pixbuf_t *output, c1pd_option_t *opt);
+/** perform prediction reconstruction for block.
+ this function calls c1pd_predict for a inverse prediction step, then adds (dequantized) residuals.
+ @param[in] b block containing (1) reconstructed residuals in b->p[ci].diff; (2) intra/inter decision and a best mi,
+ which is used to derive pred opt.
+ @param[in,out] frm recons frame, its pix is to be referred and reconstructed.
+ @param[in] ctx context, to determine ref frame.
+*/
+int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t*frm, const c1enc_ctx_t*ctx);
 
 // --- helper func ---
 

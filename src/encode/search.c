@@ -288,7 +288,7 @@ int c1enc_block_gather_pred_type(c1enc_block_t *b) {
 int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, uint8_t ref_id) {
     assert_fatal(b->pred_type_determined);
     c1pd_option_t pred_opt = {0};
-    pred_opt.size = b->size;
+
     if (b->pred_type == C1_PRED_INTRA) {
         const c1enc_mi_intra_t *mi = b->intra_cands;
         if (mi->use_cfl) {
@@ -330,14 +330,13 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
     if (opt->intra_try_cfl || !opt->intra_try_uv) {
         // only 1 mode dimension is searched
         c1pd_option_t pred_opt = {0};
-        pred_opt.size = b->size;
         pred_opt.use_cfl = 0; // no cfl first
         c1enc_mi_intra_t mi;
         mi.use_cfl = 0;
 
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
             pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
-            c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
+            c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
             for (uint8_t ci = 0; ci < 3; ci++) {
                 pred_opt.ci = ci;
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
@@ -353,7 +352,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
 
             for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
                 pred_opt.mode = mi.mode_y = mode;
-                c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
+                c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
                 int8_t *const cfl_outputs[3] = {NULL, &mi.cfl_alpha_u, &mi.cfl_alpha_v};
                 for (uint8_t ci = 0; ci < 3; ci++) {
                     pred_opt.ci = ci;
@@ -373,7 +372,6 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
         }
 
         c1pd_option_t pred_opt = {0};
-        pred_opt.size = b->size;
         pred_opt.use_cfl = 0;
         c1enc_mi_intra_t mi;
         mi.use_cfl = 0;
@@ -412,7 +410,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
         for (int yidx = 0; yidx < C1__UVMODE_SING_SRCH_CNT; yidx++) {
             for (int uvidx = 0; uvidx + yidx < C1__UVMODE_SING_SRCH_CNT; uvidx++) {
                 mi.mode_y = best_ymode[yidx], mi.mode_uv = best_uvmode[uvidx];
-                c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
+                c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
                 stat.sad = best_ysad[yidx] + best_uvsad[uvidx];
                 c1enc_block_add_intra_cand(b, &mi, &stat);
             }
@@ -438,9 +436,9 @@ static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, c
     const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, opt->inter_ref_idx);
 
     // init search info
-    c1enc_mv_t c = {y0, x0};                           // mv search center
-    c1enc_mv_t d1 = {step, 0};                         // d1 d2 the 2 directions to search, 4 points
-    c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW}; // common predict option
+    c1enc_mv_t c = {y0, x0};                          // mv search center
+    c1enc_mv_t d1 = {step, 0};                        // d1 d2 the 2 directions to search, 4 points
+    c1pd_option_t pred_opt = {.mode = C1_PRED_MVNEW}; // common predict option
 
     while (step > 0) {
         c1enc_mv_t d2 = {0 - d1.x, d1.y}; // d2 is always ortho to d1. this step may not be opt by compiler?
@@ -555,11 +553,11 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     for (int i = 0; i < nbcand; i++) {
         if (ms[i] != UINT32_MAX) {
             // gather SAD in 2 cases: case subsampled, recalculate, otherwise minus the smooth factor
-            c1enc_rdstat_t stat = {C1_RD_SAD_BIT};
+            c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
             const uint8_t dist = (uint8_t)c1_clamp16(c1_abs_i16(mvs[i].y) + c1_abs_i16(mvs[i].x), 0, 255);
             if (opt->inter_sad_subsamp_mask & dist) {
                 // (3.1) recalc sad
-                c1pd_option_t pred_opt = {b->size, C1_PRED_MVNEW, 0, 0, 0, mvs[i]};
+                c1pd_option_t pred_opt = {.mode = C1_PRED_MVNEW, .mv = mvs[i]};
                 stat.sad = 0;
                 for (uint8_t ci = 0; ci < 3; ci++) {
                     c1pd_predict(b, b->p[ci].diff, ref_pix, &pred_opt, NULL);
@@ -570,7 +568,8 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
                 stat.sad = ms[i] - opt->inter_smooth_lambda * dist / 4;
             }
             // gather mode info
-            c1enc_mi_inter_t mi = {C1_PRED_MVNEW, 0, mvs[i]};
+            // todo: ref frame fix somewhere else?
+            c1enc_mi_inter_t mi = {.mode = C1_PRED_MVNEW, .ref_frame = 0, .mv = mvs[i]};
             // add cand to block
             c1enc_block_add_inter_cand(b, &mi, &stat);
         } else

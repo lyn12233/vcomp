@@ -360,9 +360,9 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output, //
     // conduct pred, special case for dc mode
     c1pd_intra_func_t pred_func;
     if (opt->mode == C1_PRED_DC) {
-        pred_func = c1pd_dc_preds[avail_left][avail_above][opt->size];
+        pred_func = c1pd_dc_preds[avail_left][avail_above][b->size];
     } else {
-        pred_func = c1pd_intra_preds[opt->mode - C1_PRED_DC - 1][opt->size];
+        pred_func = c1pd_intra_preds[opt->mode - C1_PRED_DC - 1][b->size];
     }
     pred_func(input, output, above, left);
 
@@ -481,4 +481,76 @@ int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
 dtor:
     c1_pixbuf_clear(&ci_pix);
     return r;
+}
+
+int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ctx) {
+    assert_fatal(b->pred_type_determined);
+    const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+
+    // (1) prepare temp output
+    int16_t *pred_output = c1_mpool_alloc_def(bh * bw * sizeof(int16_t));
+    assert_fatal(pred_output);
+
+    // (2) translate predict option from mode info
+
+    c1pd_option_t opts[3] = {0};
+    int8_t cfl_alphas[3] = {0};
+    const c1_pixbuf_t *ref_pix = NULL;
+
+    for (uint8_t ci = 0; ci < 3; ci++)
+        opts[ci].ci = ci;
+
+    if (b->pred_type == C1_PRED_INTRA) {
+        assert_fatal(b->intra_cand_cnt > 0);
+        const c1enc_mi_intra_t *mi = b->intra_cands + 0;
+        ref_pix = &frm->pix;
+
+        for (int ci = 0; ci < 3; ci++) {
+            opts[ci].use_cfl = mi->use_cfl;
+            opts[ci].has_cfl_alpha = 0;
+        }
+        if (mi->use_cfl) {
+            cfl_alphas[1] = mi->cfl_alpha_u;
+            cfl_alphas[2] = mi->cfl_alpha_v;
+        }
+        opts[0].mode = mi->mode_y;
+        opts[1].mode = mi->mode_uv;
+        opts[2].mode = mi->mode_uv;
+
+    } else if (b->pred_type == C1_PRED_INTER) {
+        assert_fatal(b->inter_cand_cnt > 0);
+        const c1enc_mi_inter_t *mi = b->inter_cands + 0;
+        ref_pix = c1enc_ctx_frame_at(ctx, &frm->pix, mi->ref_frame);
+
+        if (mi->mode != C1_PRED_MVNEW) {
+            fatal("unimpl");
+        }
+        for (int ci = 0; ci < 3; ci++) {
+            opts[ci].mode = mi->mode;
+            opts[ci].mv = mi->mv;
+        }
+
+    } else {
+        fatal("unknown pred type %u", b->pred_type);
+    }
+    assert_fatal(ref_pix);
+
+    // (3) predict and add up residuals
+
+    for (int ci = 0; ci < 3; ci++) {
+        c1pd_predict(b, pred_output, ref_pix, opts + ci, cfl_alphas + ci);
+        for (int i = 0; i < bh; i++) {
+            for (int j = 0; j < bw; j++) {
+                *c1_pixbuf_geti16(&frm->pix, by + i, bx + j) = pred_output[i * bw + j] + b->p[ci].diff[i * bw + j];
+            }
+        }
+    }
+
+
+    // (4) dealloc
+    c1_mpool_dealloc_def(bh*bw*sizeof(int16_t),pred_output);
+
+    return 0;
 }

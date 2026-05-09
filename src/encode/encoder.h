@@ -147,6 +147,16 @@ c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
 /** get 64x64 c3i16 pixels about dif buf */
 c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb);
 
+
+// --- --- all-in-one encoder proc --- ---
+
+typedef struct{
+    uint8_t qp;
+    uint8_t max_p_frames;
+}c1enc_option_t;
+
+int c1enc_encode(c1enc_frame_t*frm,const c1_pixbuf_t*pix, c1enc_ctx_t*ctx,const c1enc_option_t*opt);
+
 #ifdef __cplusplus
 }
 #endif

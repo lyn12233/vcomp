@@ -196,3 +196,8 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
 }
 #endif
 #endif
+
+/*
+history:
+2026.5.9: todo: require ref_frame awareness. now is incomplete.
+*/

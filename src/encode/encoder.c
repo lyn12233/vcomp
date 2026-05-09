@@ -584,3 +584,11 @@ c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb) {
     c1enc__get_dif_part(&res, sb->root);
     return res;
 }
+
+//
+
+
+int c1enc_encode(c1enc_frame_t*frm,const c1_pixbuf_t*pix, c1enc_ctx_t*ctx,const c1enc_option_t*opt){
+    c1enc_frame_update(frm,pix);
+    return 0;
+}
