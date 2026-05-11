@@ -16,6 +16,7 @@ extern "C" {
 #endif
 
 #include "types.h"
+#include "util/pixbuf.h"
 
 #include <stdint.h>
 
@@ -35,7 +36,22 @@ typedef struct {
     uint16_t qstep;
 } c1tx_search_option_t;
 
+/** search for tranform type at super block level.
+ the block level search is not exposed since coef buffers are dynamically allocated at sb level, which requires constant
+ checks.
+*/
 int c1tx_search_sb(c1enc_super_block_t *sb, c1tx_search_option_t opt);
+/** reconstruct pix from pred result adding residuals txfm'ed from (dq)coef.
+ note: this may be called by decoder. thus assumes target coefficients are in b->p[ci].coef.
+ @param[in,out] sb super block. output is to the dif buf
+ @param[in] pix
+*/
+int c1tx_reconstruct(c1enc_super_block_t *sb);
+
+/** helper func simply assign dqcoef to coef for each block.
+ the reason see @ref c1tx_search_sb. note: coef and dqcoef should both exist at encoder stage?
+*/
+int c1enc_sb_dqc2c(c1enc_super_block_t *sb);
 
 // --- quant ---
 
@@ -66,7 +82,7 @@ static c1_quant_t c1q_get_q_inf(uint8_t ac, uint8_t plane, uint8_t idx) {
 */
 int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp);
 /** gather i index at superblock level.
- 
+
  currently impl 2 fixed qp control model:
     - qstep/2 approx mean-3*qp*std
     - ? todo

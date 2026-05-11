@@ -548,9 +548,23 @@ int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx
         }
     }
 
-
     // (4) dealloc
-    c1_mpool_dealloc_def(bh*bw*sizeof(int16_t),pred_output);
+    c1_mpool_dealloc_def(bh * bw * sizeof(int16_t), pred_output);
 
     return 0;
+}
+
+static int c1pd__reconstruct_p(const c1enc_partition_t *p, c1enc_frame_t *frm, const c1enc_ctx_t *ctx) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1pd__reconstruct_p(p->parts[i], frm, ctx);
+        }
+    } else {
+        c1pd_reconstruct(p->b, frm, ctx);
+    }
+    return 0;
+}
+
+int c1pd_reconstruct_sb(const c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx) {
+    return c1pd__reconstruct_p(sb->root, frm, ctx);
 }

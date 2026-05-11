@@ -65,7 +65,8 @@ int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
  @param[in,out] frm recons frame, its pix is to be referred and reconstructed.
  @param[in] ctx context, to determine ref frame.
 */
-int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t*frm, const c1enc_ctx_t*ctx);
+int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
+int c1pd_reconstruct_sb(const c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
 
 // --- helper func ---
 

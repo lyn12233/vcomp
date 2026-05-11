@@ -327,6 +327,15 @@ int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const 
 // --- pred mode search ---
 
 int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
+    // dir mode in z1/z3 trimmed for the edges may not be avail for recon/decode
+    uint32_t mode_skip_mask = 0;
+    if (b->yoff > 0) {
+        mode_skip_mask |= (1 << C1_PRED_D45) | (1 << C1_PRED_D67);
+    }
+    if (b->xoff > 0) {
+        mode_skip_mask |= 1 << C1_PRED_D203;
+    }
+
     if (opt->intra_try_cfl || !opt->intra_try_uv) {
         // only 1 mode dimension is searched
         c1pd_option_t pred_opt = {0};
@@ -335,6 +344,8 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
         mi.use_cfl = 0;
 
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
+            if (mode_skip_mask & (1 << mode))
+                continue;
             pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
             c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
             for (uint8_t ci = 0; ci < 3; ci++) {
@@ -351,6 +362,8 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
             pred_opt.use_cfl = mi.use_cfl = 1;
 
             for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
+                if (mode_skip_mask & (1 << mode))
+                    continue;
                 pred_opt.mode = mi.mode_y = mode;
                 c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
                 int8_t *const cfl_outputs[3] = {NULL, &mi.cfl_alpha_u, &mi.cfl_alpha_v};
@@ -377,6 +390,8 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
         mi.use_cfl = 0;
 
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
+            if (mode_skip_mask & (1 << mode))
+                continue;
             pred_opt.mode = mode; // not setting mi
             int ysad = 0, uvsad = 0;
             int *const sad_targ[3] = {&ysad, &uvsad, &uvsad};
@@ -428,11 +443,11 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
 */
 static int c1enc_search_inter_b_step(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                                      const c1enc_search_option_t *opt,                                 //
-                                     uint8_t step_0, uint8_t step_cur, uint32_t *matrices) {
+                                     uint8_t step_0, uint8_t step_cur, uint32_t *matrices,             //
+                                     const uint8_t y0, const uint8_t x0) {
 
     // short alias of vars
     uint8_t step = step_cur;
-    const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
     const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, opt->inter_ref_idx);
 
     // init search info
@@ -504,8 +519,19 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
                          const c1enc_search_option_t *opt) {
     // alias
     const uint8_t nbcand = opt->inter_newcand_cnt;
-    const uint8_t y0 = opt->inter_y0, x0 = opt->inter_x0;
     const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, opt->inter_ref_idx);
+    // attrs about ref mv
+    const uint8_t intrabc = opt->inter_ref_idx == 0;
+    c1enc_mv_t ref_mv;
+    if (b->has_ref_mv) {
+        ref_mv = b->ref_mv;
+    } else {
+        ref_mv = opt->inter_ref_idx == 0
+                   ? (c1enc_mv_t){0}
+                   : c1enc_ref_at((c1enc_ctx_t *)ctx, b->sb_y, b->sb_x, b->yoff, b->xoff, opt->inter_ref_idx)->mv;
+        b->ref_mv = ref_mv;
+    }
+    const uint8_t y0 = (uint8_t)ref_mv.y, x0 = (uint8_t)ref_mv.x;
 
     // get step_0
     uint8_t step_0 = C1__INTER_STEP_0_MAX;
@@ -525,7 +551,7 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     uint8_t step_cur = step_0;
     while (step_cur) {
         if (opt->inter_init_steps_mask & step_cur)
-            c1enc_search_inter_b_step(b, pix, ctx, opt, step_0, step_cur, matrices);
+            c1enc_search_inter_b_step(b, pix, ctx, opt, step_0, step_cur, matrices, y0, x0);
         step_cur /= 2;
     }
 

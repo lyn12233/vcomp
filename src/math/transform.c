@@ -260,9 +260,9 @@ int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt) {
             fatal2("unimpl");
         } else {
             for (uint8_t row = 0; row < opt->txsize_row; row++) {
-                // suppose bitdepth is 8bit, clamps to 255
+                // clamps to int16
                 int16_t *out = output + row * opt->txsize_col + col;
-                *out = (int16_t)c1tx__clamp64((int64_t)*out + temp_out[row], 0, 255);
+                *out = (int16_t)c1_clamp32(temp_out[row], INT16_MIN, INT16_MAX);
             }
         } // </flip?>
     } // </col_tx>

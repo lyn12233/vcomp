@@ -15,7 +15,7 @@ extern "C" {
  for future compatibility, input is stored again in a compact mem.
 */
 
-#define C1_TX1_SIZE_CNT 4 // 8,16,32,64
+#define C1_TX1_SIZE_CNT 4           // 8,16,32,64
 #define C1_TX2_SIZE_CNT C1_SIZE_CNT // 8x8 ... 64x64
 #define C1_TX1_TYPE_CNT 7
 #define C1_TX2_TYPE_CNT C1_TX_TYPE_CNT
@@ -69,9 +69,9 @@ void c1tx_round_shift_array(int32_t *arr, int size, int bit);
  @param opt transform option, now only needs 2d transform type and size. other fields are extended
 */
 int c1tx_txfm2d(const int16_t *input, int32_t *output, c1tx_option_t *opt);
-/** perform 2D inerse transform
- @param input c1i32
- @param output c1i16
+/** perform 2D inerse transform.
+ @param[in] input c1i32
+ @param[out] output c1i16
  */
 int c1tx_inv_txfm2d(const int32_t *input, int16_t *output, c1tx_option_t *opt);
 

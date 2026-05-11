@@ -1,14 +1,18 @@
+/** @file search.h
+ prediction mode search, measure, block merge/divide strategies
+*/
 #ifndef C1_ENCODE_SEARCH_H
-#define C1_ENCODE_SEARCH_H
-#ifdef __cplusplus
+    #define C1_ENCODE_SEARCH_H
+    #ifdef __cplusplus
 extern "C" {
-#endif
+    #endif
 
-#include "types.h"
+    #include "types.h"
 
-#include "types.h"
-#include "util/log.h"
-#include "util/pixbuf.h"
+    #include "encoder.h"
+    #include "types.h"
+    #include "util/log.h"
+    #include "util/pixbuf.h"
 
 // --- --- search utils --- ---
 
@@ -53,7 +57,9 @@ int c1enc_block_add_inter_cand(c1enc_block_t *b, const c1enc_mi_inter_t *mi, con
 int c1enc_part_gather_rdstat(c1enc_partition_t *p);
 /** gather pred type */
 int c1enc_block_gather_pred_type(c1enc_block_t *b);
-/** gather residual to b->p[ci].diff. this should be called after gather pred_type */
+/** gather residual to b->p[ci].diff. this should be called after gather pred_type.
+ after this stage diff stores residual rather than pred result.
+*/
 int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, uint8_t ref_id);
 static int c1enc_part_gather_pred_type(c1enc_partition_t *p) {
     int r;
@@ -86,8 +92,8 @@ static int c1enc_part_gather_residual(c1enc_partition_t *p, const c1_pixbuf_t *p
 typedef struct {
     // block level
     // - inter search option
-    uint8_t try_inter;              // inter searrch switch
-    uint8_t inter_y0, inter_x0;     // mv search initial mv
+    uint8_t try_inter; // inter searrch switch
+    // uint8_t inter_y0, inter_x0;     // mv search initial mv
     uint8_t inter_init_steps_mask;  // mask 0..6 bit is the step size, 1..64
     uint8_t inter_sad_subsamp_mask; // 2x2 subsample mask, e.g. [msb] 1...10...0. index to this mask is abs(x)+abs(y)
     uint8_t inter_smooth_lambda;    // m = (sad|sad_subsamp) + lambda*(abs(x)+abs(y))/4
@@ -101,18 +107,21 @@ typedef struct {
     // partition level
     // - merging/dividing option
     // -- to tell if mode(intra/inter) is obviously better than another: loss1<((loss2*mult)>>shift)
-    //    this counts for if a merge ofspecific mode is decided
+    //    this counts for if a merge of specific mode is decided: if intra mode cands are much better than inter cands,
+    //    prune further seach on inter cands and vice versa.
     uint8_t thre_mode_better_mult;  // e.g. 3
     uint8_t thre_mode_better_shift; // e.g. 1
     // -- to tell if matrices(SAD) of 4 partitions are not obviously different: min_>=((max_*mult)>>shift)
-    //    this counts for if a merge ofspecific mode is decided
+    //    this counts for if a merge of specific mode is decided: (1) at comparable residual stats, a merged block may
+    //    require less encode info overhead. thus merge is considered as soon as the stats of parts are not much better.
+    //    (2) if residuals are not distributed uniformly enough, partition may op better with tx and quant.
     uint8_t thre_mat_is_dif_mult;  // e.g. 3
     uint8_t thre_mat_is_dif_shift; // e.g. 2
     // superblock level
     // - palette option
     uint8_t try_palette;
     // misc and large ints
-    // - delta for the min_ of matrices
+    // - delta for the min_ of matrices for decision (2)
     uint32_t thre_mat_is_dif_delta;
     // - max SAD of a block, may be fixed fraction of frame
     uint32_t thre_sad_max_b;
@@ -135,16 +144,19 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, //
 /** search inter mv at block level. measures abs diff.
  @param b target block
  @param pix c3i16 pixels buf of the current frame.
+ @param ctx context, to access ref frame pix.
  */
 int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                          const c1enc_search_option_t *opt);
 static inline int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                                  const c1enc_search_option_t *opt) {
     int r = 0;
-    if (opt->try_intra)
+    if (opt->try_intra) {
         r = c1enc_search_intra_b(b, pix, opt);
-    if (r >= 0 && opt->try_inter)
+    }
+    if (r >= 0 && opt->try_inter) {
         r = c1enc_search_inter_b(b, pix, ctx, opt);
+    }
     return r;
 }
 static inline int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
@@ -192,9 +204,9 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                     const c1enc_search_option_t *opt);
 
-#ifdef __cplusplus
+    #ifdef __cplusplus
 }
-#endif
+    #endif
 #endif
 
 /*

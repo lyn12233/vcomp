@@ -69,7 +69,11 @@ int c1enc_sb_clear(c1enc_super_block_t *sb);
 int c1enc_sb_validate(const c1enc_super_block_t *sb);
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind);
 
-int c1enc_sb_require_coef_bufs(c1enc_super_block_t*sb);
+/** allocate coef, [qcoef and dqcoef].
+ @param sb super block
+ @param lv level: 1 for only coef, 3 for all
+*/
+int c1enc_sb_require_coef_bufs(c1enc_super_block_t*sb,uint8_t lv);
 int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t*sb);
 
 // --- partition ---
@@ -153,6 +157,7 @@ c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb);
 typedef struct{
     uint8_t qp;
     uint8_t max_p_frames;
+    uint32_t rate_per_sb;
 }c1enc_option_t;
 
 int c1enc_encode(c1enc_frame_t*frm,const c1_pixbuf_t*pix, c1enc_ctx_t*ctx,const c1enc_option_t*opt);

@@ -69,12 +69,12 @@ enum {
     C1_PRED_DC,
     C1_PRED_H,
     C1_PRED_V,
-    C1_PRED_D45,  // 45-z1 225-z3 both likely
+    C1_PRED_D45,  // 45-z1; todo: add d225?
     C1_PRED_D135, // z2
-    C1_PRED_D67,  // z1 left
+    C1_PRED_D67,  // z1
     C1_PRED_D113, // z2
     C1_PRED_D157, // z2
-    C1_PRED_D203, // z3 right
+    C1_PRED_D203, // z3
     C1_PRED_PAETH,
 };
 typedef uint8_t C1_PRED_MODE;
@@ -143,6 +143,7 @@ typedef struct {
 /** encoder context.
  mainly used for inter prediciton mode, which requires to refer to previous frames.
  after encoding a frame, essential frame data are pushed back to the ctx's fields.
+ init with {0}.
 */
 struct c1enc_ctx_s {
     /** inversed transformed frames, with wid and hgt implied.
@@ -153,6 +154,13 @@ struct c1enc_ctx_s {
         new frames are stored at the back to reduce memmove's.
     */
     uint8_t avail_ref_cnt;
+    /** last n p-frames, to determine if a new i frame is necessary
+    */
+    uint8_t consecutive_p_cnt;
+    /** estimate qstep and qindex, qstep=0 for undefined. currently unused?
+    */
+    uint16_t est_qstep;
+    uint8_t est_qi;
     /** referenced data stored at per super block level.
         REF_FRAME_CNT slots aligned to REF_FRAME_CNT possible ref frames.
         each slot points to a h*w style array of ref_t, the same size as that of the sb's in corresponding frame.
@@ -170,7 +178,7 @@ struct c1enc_frame_s {
     // buffer
     c1_pixbuf_t pix;
 
-    C1_FRAME_TYPE frame_type;
+    C1_FRAME_TYPE frame_type; // also a early stage frame type indicator
 
     uint8_t q_index;
     int8_t q_index_delta;
@@ -194,6 +202,7 @@ struct c1enc_super_block_s {
 
     uint16_t sb_y, sb_x; // super block is at y row and x col in frame
 
+    uint8_t has_q_index;
     uint8_t q_index;
     int8_t q_index_delta;
 
@@ -235,6 +244,10 @@ struct c1enc_block_s {
 
     uint16_t sb_y, sb_x; // sb index in frame
     uint8_t yoff, xoff;  // offset in super block
+
+    // attrs for cached mv
+    uint8_t has_ref_mv;
+    c1enc_mv_t ref_mv;
 
     // attrs for search result
 
@@ -345,3 +358,8 @@ static const c1_pixbuf_t *c1enc_ctx_frame_at(const c1enc_ctx_t *ctx, const c1_pi
 #endif
 
 #endif
+
+/*
+history:
+2026.5.9: todo: encoder structs should be used for decoder, causing 2 overheads: diff buf and cands. 
+*/

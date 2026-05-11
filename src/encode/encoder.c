@@ -1,6 +1,9 @@
 #include "encoder.h"
+#include "encode/search.h"
 #include "predictor.h"
+#include "quant.h"
 #include "types.h"
+#include "tables.h"
 
 #include "math/transform.h"
 #include "util/log.h"
@@ -72,14 +75,16 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->wid = ew;
         frm->hgt_per_sb = hb;
         frm->wid_per_sb = wb;
+    } else {
+        frm->frame_type = C1_FRAME_P;
     }
 
     // paste pix to frame
     if (!frm->pix.buf) {
         // pix not prepared, create one
         frm->pix = c1_pixbuf_create(C1_PIXBUF_C3I16, eh, ew);
-        c1_pixbuf_paste(&frm->pix, pix, 0, 0);
     }
+    c1_pixbuf_paste(&frm->pix, pix, 0, 0);
     for (uint16_t i = 0; i < hb; i++) {
         for (uint16_t j = 0; j < wb; j++)
             c1enc_sb_update(frm->super_blocks + wb * i + j, frm, i, j);
@@ -135,6 +140,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
 
     // volatile attrs
 
+    sb->has_q_index = 0;
     sb->q_index_delta = 0;
     // coef_bufs may not be maintained. just to assure
     if (sb->coef_bufs) {
@@ -194,9 +200,9 @@ static int c1enc__part_set_coef_bufs(c1enc_partition_t *p, //
     } else {
         c1enc_block_t *b = p->b;
         for (int ci = 0; ci < 3; ci++) {
-            b->p[ci].coef = coef_bufs + p->buf_offs * 3 + h * w * ci;
-            b->p[ci].qcoef = qcoef_bufs + p->buf_offs * 3 + h * w * ci;
-            b->p[ci].dqcoef = dqcoef_bufs + p->buf_offs * 3 + h * w * ci;
+            b->p[ci].coef = coef_bufs ? coef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
+            b->p[ci].qcoef = qcoef_bufs ? qcoef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
+            b->p[ci].dqcoef = dqcoef_bufs ? dqcoef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
         }
     }
     return 0;
@@ -216,13 +222,23 @@ static int c1enc__part_unset_coef_bufs(c1enc_partition_t *p) {
     }
     return 0;
 }
-int c1enc_sb_require_coef_bufs(c1enc_super_block_t *sb) {
-    if (sb->coef_bufs)
+int c1enc_sb_require_coef_bufs(c1enc_super_block_t *sb, uint8_t lv) {
+    if (sb->coef_bufs) {
+        // do not check if lv matches. it's ok
         return 0;
-    int32_t *coef_bufs = malloc(3 * 3 * 64 * 64 * sizeof(int32_t));
+    }
+    assert_fatal_ex(lv == 1 || lv == 3, "invalide lv=%u", lv);
+
+    int32_t *coef_bufs = malloc(lv * 3 * 64 * 64 * sizeof(int32_t));
     assert_fatal(coef_bufs);
     sb->coef_bufs = coef_bufs;
-    c1enc__part_set_coef_bufs(sb->root, coef_bufs, coef_bufs + 3 * 64 * 64, coef_bufs + 2 * 3 * 64 * 64);
+
+    if (lv == 3) {
+        c1enc__part_set_coef_bufs(sb->root, coef_bufs, coef_bufs + 3 * 64 * 64, coef_bufs + 2 * 3 * 64 * 64);
+    } else {
+        c1enc__part_set_coef_bufs(sb->root, coef_bufs, NULL, NULL);
+    }
+
     return 0;
 }
 int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t *sb) {
@@ -365,6 +381,7 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     b->yoff = y, b->xoff = x;
     b->size = size;
 
+    b->has_ref_mv = 0;
     b->has_tx_cand = 0;
     b->intra_cand_cnt = 0;
     b->inter_cand_cnt = 0;
@@ -518,6 +535,7 @@ c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_
     const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
     const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
     if (sb_y >= h || sb_x >= w) {
+        warning("super block index out of range");
         return NULL;
     }
     c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * w + sb_x;
@@ -587,8 +605,102 @@ c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb) {
 
 //
 
+int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, const c1enc_option_t *opt) {
+    // (0) in case resize or init
+    c1enc_frame_update(frm, pix);
 
-int c1enc_encode(c1enc_frame_t*frm,const c1_pixbuf_t*pix, c1enc_ctx_t*ctx,const c1enc_option_t*opt){
-    c1enc_frame_update(frm,pix);
+    // (1) frame type
+
+    int use_i_frame = frm->frame_type == C1_FRAME_I;
+    // decide if consecutive p frame exceeds range in option
+    if (!use_i_frame) {
+        if (ctx->consecutive_p_cnt >= opt->max_p_frames) {
+            use_i_frame = 1;
+        }
+    }
+    // decide if frame changes greatly. todo: impl
+    if (!use_i_frame) {
+        (void)0;
+    }
+    // respond to frame type
+    if(use_i_frame){
+        for(uint8_t idx=0;idx<ctx->avail_ref_cnt;idx++){
+            c1enc_ctx_clear_entry(ctx, idx);
+        }
+        ctx->avail_ref_cnt=0;
+    }
+    frm->frame_type = use_i_frame ? C1_FRAME_I : C1_FRAME_P;
+
+    // (2) search prediction
+
+    // todo impl better ref_id
+    uint8_t ref_id = 1; // the previous first frame
+
+    // ephemeral search opt impl
+    c1enc_search_option_t srch_opt = {0};
+    if (!use_i_frame) {
+        srch_opt.try_inter = 1;
+        srch_opt.inter_init_steps_mask = 32 | 16 | 8 | 4;
+        srch_opt.inter_sad_subsamp_mask = (1 << 7) - (1 << 3);
+        srch_opt.inter_smooth_lambda = 0;
+        srch_opt.inter_newcand_cnt = C1_ENC_INTER_CAND_CNT;
+        srch_opt.inter_ref_idx = ref_id;
+    }
+    srch_opt.try_intra = 1;
+    srch_opt.intra_try_uv = 1;
+    srch_opt.intra_try_cfl = 0;
+    srch_opt.intra_rng_max = C1_PRED_PAETH + 1;
+    srch_opt.thre_mode_better_mult = 3;
+    srch_opt.thre_mode_better_shift = 1;
+    srch_opt.thre_mat_is_dif_mult = 3;
+    srch_opt.thre_mat_is_dif_shift = 2;
+    srch_opt.thre_mat_is_dif_delta = 1 << 12;
+    // todo: impl
+    srch_opt.thre_sad_max_b = 1 << 12;
+
+    // search in a order that ensure prediction edges(at least bh+bw<=64*2) exist ?
+    const int hb = frm->hgt_per_sb, wb = frm->wid_per_sb;
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1enc_search_sb(frm->super_blocks + idx, pix, ctx, &srch_opt);
+        // gather mode and diff
+        c1enc_part_gather_pred_type(frm->super_blocks[idx].root);
+        c1enc_part_gather_residual(frm->super_blocks[idx].root, pix, ctx, ref_id);
+    }
+
+    // (3) tx&quantize&recon
+    c1tx_search_option_t tx_opt = {0};
+    tx_opt.size_depth = 2;
+    tx_opt.measure = C1TX_MEASURE_NOP;
+    tx_opt.tx_rng_max = TX2TYPE_DCT_DCT + 1;
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1tx_search_sb(frm->super_blocks + idx, tx_opt);
+        c1enc_sb_gather_qi(frm->super_blocks + idx, opt->qp);
+        c1enc_sb_dealloc_coef_bufs(frm->super_blocks+idx);
+    }
+    c1enc_frame_gather_qi(frm, opt->qp);
+    tx_opt.measure=C1TX_MEASURE_RATE;
+    tx_opt.tx_rng_max=TX2TYPE_IDEN+1;
+    for(int idx=0;idx<hb*wb;idx++){
+        c1enc_super_block_t*sb=frm->super_blocks+idx;
+        // currenty use y plance ac qstep to assess, todo: ?
+        tx_opt.qstep=c1_lookup_q_ac[0][sb->q_index];
+        c1tx_search_sb(sb, tx_opt);
+        c1enc_quantize_sb(sb);
+
+        c1enc_sb_dqc2c(sb);
+        c1tx_reconstruct(sb);
+
+        c1pd_reconstruct_sb(sb,frm,ctx); // pred is done again here.
+        c1enc_sb_dealloc_coef_bufs(sb);
+    }
+
+    // (4) update ctx
+    
+    c1enc_push_ref(ctx,frm);
+    ctx->est_qi=frm->q_index;
+    ctx->consecutive_p_cnt += !use_i_frame;
+
+    // assess/write to bitstream?
+
     return 0;
 }

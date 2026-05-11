@@ -4,6 +4,7 @@
 #include "tables.h"
 #include "types.h"
 #include "util/log.h"
+#include "util/pixbuf.h"
 
 #include <limits.h>
 #include <math.h>
@@ -66,10 +67,14 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
     const int tx_hgt = c1_sz2hgt(tx_size), tx_wid = c1_sz2wid(tx_size);
     const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
     const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
-    const int max_eob = c1tx__get_max_eob(tx_size);
+
     memset(temp_out, 0, area * 3 * sizeof(int32_t)); // 3*bh*bw
+
     for (int ci = 0; ci < 3; ci++) {
+
         int16_t *in = b->p[ci].diff; // bh*bw
+        int32_t *tx_out = temp_out + area * ci;
+
         for (int bi = 0; bi < bh; bi += tx_hgt) {
             for (int bj = 0; bj < bw; bj += tx_wid) {
                 // gather compact residuals to temp from in
@@ -79,8 +84,9 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
                     }
                 }
                 // transform
-                c1tx_option_t tx_opt = {tx_size, tx_type};
-                c1tx_txfm2d(temp_in, temp_out + area * ci, &tx_opt);
+                c1tx_option_t tx_opt = {.txsize = tx_size, .txtype = tx_type};
+                c1tx_txfm2d(temp_in, tx_out, &tx_opt);
+                tx_out += tx_hgt * tx_wid;
             }
         }
     }
@@ -88,8 +94,8 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
                                      opt, tx_size, c1tx__get_scan_id(tx_type));
     // update tx info and coef case first or better
     if (!b->has_tx_cand || b->tx_stat.r < cur_rate) {
-        b->tx_inf = (c1enc_tx_inf_t){tx_size, tx_type};
-        b->tx_stat = (c1enc_rdstat_t){C1_RD_RATE_BIT, .r = cur_rate};
+        b->tx_inf = (c1enc_tx_inf_t){.tx_size = tx_size, .tx_type = tx_type};
+        b->tx_stat = (c1enc_rdstat_t){.mask = C1_RD_RATE_BIT, .r = cur_rate};
         for (int ci = 0; ci < 3; ci++) {
             memcpy(b->p[ci].coef, temp_out + area * ci, area * sizeof(int32_t));
         }
@@ -129,9 +135,83 @@ static int c1tx__search_p(c1enc_partition_t *p, c1tx_search_option_t opt) {
 }
 
 int c1tx_search_sb(c1enc_super_block_t *sb, c1tx_search_option_t opt) {
-    c1enc_sb_require_coef_bufs(sb);
+    c1enc_sb_require_coef_bufs(sb, 3);
     c1tx__search_p(sb->root, opt);
     return 0;
+}
+
+static int c1tx__b_recon(c1enc_block_t *b) {
+    assert_fatal(b->has_tx_cand);
+
+    const C1_2D_SZ tx_size = b->tx_inf.tx_size;
+    const C1_TX_2D_TYPE tx_type = b->tx_inf.tx_type;
+    const int tx_hgt = c1_sz2hgt(tx_size), tx_wid = c1_sz2wid(tx_size);
+    const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+    const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
+
+    int16_t *temp_out = c1_mpool_alloc_def(tx_hgt * tx_wid * sizeof(int16_t));
+    assert_fatal(temp_out);
+
+    for (int ci = 0; ci < 3; ci++) {
+
+        int32_t *inv_tx_in = b->p[ci].coef;
+        int16_t *out = b->p[ci].diff;
+
+        for (int bi = 0; bi < bh; bi += tx_hgt) {
+            for (int bj = 0; bj < bw; bj += tx_wid) {
+                // transform
+                c1tx_option_t tx_opt = {.txsize = tx_size, .txtype = tx_type};
+                c1tx_inv_txfm2d(inv_tx_in, temp_out, &tx_opt);
+                inv_tx_in += tx_hgt * tx_wid;
+
+                for (int i = 0; i < tx_hgt; i++) {
+                    for (int j = 0; j < tx_wid; j++) {
+                        out[(bi + i) * bw + bj + j] = temp_out[i * tx_wid + j];
+                    }
+                }
+
+            } // bj
+        } // bi
+    }
+
+    return 0;
+}
+
+static int c1tx__part_recon(c1enc_partition_t *p) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1tx__part_recon(p->parts[i]);
+        }
+    } else {
+        c1tx__b_recon(p->b);
+    }
+    return 0;
+}
+
+int c1tx_reconstruct(c1enc_super_block_t *sb) {
+    return c1tx__part_recon(sb->root);
+}
+
+int c1enc__part_dqc2c(c1enc_partition_t *p) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++) {
+            c1enc__part_dqc2c(p->parts[i]);
+        }
+    } else {
+        c1enc_block_t *b = p->b;
+        for (int ci = 0; ci < 3; ci++) {
+            // swap coef and dqcoef ptrs
+            int32_t *tmp = b->p[ci].coef;
+            b->p[ci].coef = b->p[ci].dqcoef;
+            b->p[ci].dqcoef = tmp;
+        }
+    }
+    return 0;
+}
+
+int c1enc_sb_dqc2c(c1enc_super_block_t *sb) {
+    assert_fatal(sb->coef_bufs);
+    return c1enc__part_dqc2c(sb->root);
 }
 
 static void c1__invert_quant(uint16_t *quant, uint16_t *shift, uint32_t q) {
@@ -214,6 +294,11 @@ int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp) {
     return 0;
 }
 int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp) {
+    if (sb->has_q_index)
+        return 0;
+    sb->has_q_index = 1;
+    assert_fatal(sb->coef_bufs);
+    // todo: use a better strategy
     uint16_t q = c1enc__est_q_v1(sb->coef_bufs + 0, 12, qp);
     sb->q_index = c1enc__bisect_qi(c1_lookup_q_dc[0], q, 0, 255);
     return 0;
