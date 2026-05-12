@@ -3,7 +3,6 @@
 #include "src/util/log.h"
 #include "src/util/pixbuf.h"
 
-
 int main() {
     c1_pixbuf_t pb = c1_pixbuf_create(C1_PIXBUF_C1I8, 8, 8);
     for (int y = 0; y < 8; y++) {
@@ -29,4 +28,16 @@ int main() {
     c1_pixbuf_clear(&pb3);
     c1_pixbuf_clear(&pb4);
     c1_pixbuf_clear(&pb5);
+
+    pb = c1_pixbuf_create(C1_PIXBUF_C3I8, 1, 1);
+    uint8_t *ptr = c1_pixbuf_get(&pb, 0, 0);
+    ptr[0] = ptr[1] = ptr[2] = 255;
+    c1_pixbuf_repr(stdout, &pb);
+    pb2 = c1_pixbuf_cvt_rgbi8_to_yuv16(&pb);
+    c1_pixbuf_repr(stdout, &pb2);
+    c1_pixbuf_clear(&pb);
+    pb=c1_pixbuf_cvt_yuv16_to_rgbi8(&pb2);
+    c1_pixbuf_repr(stdout, &pb);
+    c1_pixbuf_clear(&pb);
+    c1_pixbuf_clear(&pb2);
 }

@@ -26,6 +26,7 @@ extern "C" {
 
 #include "types.h"
 
+#include "encode/types.h"
 #include "math/transform.h"
 #include "util/pixbuf.h"
 
@@ -73,8 +74,8 @@ void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind);
  @param sb super block
  @param lv level: 1 for only coef, 3 for all
 */
-int c1enc_sb_require_coef_bufs(c1enc_super_block_t*sb,uint8_t lv);
-int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t*sb);
+int c1enc_sb_require_coef_bufs(c1enc_super_block_t *sb, uint8_t lv);
+int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t *sb);
 
 // --- partition ---
 
@@ -149,18 +150,20 @@ c1enc_mv_t c1enc_get_mvref(const c1enc_frame_t *frm, const c1enc_ctx_t *ctx, //
 // --- vis ---
 
 /** get 64x64 c3i16 pixels about dif buf */
-c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb);
-
+int c1enc_get_dif_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
+int c1enc_get_dif(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
+int c1enc_get_coef_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
+int c1enc_get_coef(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
 
 // --- --- all-in-one encoder proc --- ---
 
-typedef struct{
+typedef struct {
     uint8_t qp;
     uint8_t max_p_frames;
     uint32_t rate_per_sb;
-}c1enc_option_t;
+} c1enc_option_t;
 
-int c1enc_encode(c1enc_frame_t*frm,const c1_pixbuf_t*pix, c1enc_ctx_t*ctx,const c1enc_option_t*opt);
+int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, const c1enc_option_t *opt);
 
 #ifdef __cplusplus
 }

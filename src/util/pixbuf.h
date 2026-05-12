@@ -51,6 +51,8 @@ c1_pixbuf_t c1_pixbuf_from_ptr(C1_PIXBUF_TYPE type, uint16_t h, uint16_t w, cons
 
 c1_pixbuf_t c1_pixbuf_fromview(const c1_pixbuf_t *pix, int h_slice[3], int w_slice[3]);
 c1_pixbuf_t c1_pixbuf_cvt(const c1_pixbuf_t *in, C1_PIXBUF_TYPE type);
+c1_pixbuf_t c1_pixbuf_cvt_rgbi8_to_yuv16(const c1_pixbuf_t *in);
+c1_pixbuf_t c1_pixbuf_cvt_yuv16_to_rgbi8(const c1_pixbuf_t *in);
 int c1_pixbuf_paste(c1_pixbuf_t *trg, const c1_pixbuf_t *src, int y, int x);
 c1_pixbuf_t c1_pixbuf_dupview(const c1_pixbuf_t *pix);
 c1_pixbuf_t c1_pixbuf_fromchnl(const c1_pixbuf_t *pix, int chnl);

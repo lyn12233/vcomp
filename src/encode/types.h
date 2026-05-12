@@ -6,42 +6,42 @@ key definitions:
 */
 
 #ifndef C1_ENCODE_TYPES_H
-#define C1_ENCODE_TYPES_H
-#ifdef __cplusplus
+    #define C1_ENCODE_TYPES_H
+    #ifdef __cplusplus
 extern "C" {
-#endif
+    #endif
 
-#include "util/log.h"
-#include "util/pixbuf.h"
+    #include "util/log.h"
+    #include "util/pixbuf.h"
 
-#include <stdint.h>
+    #include <stdint.h>
 
-/* table of contents
-    - size enums:       45
-    - pred mode enums:  55
-    - tx enums:         80
-    - frame type:       105
-    - motion vector:    115
-    - rdstat:           125
-    - context:          140
-    - frame_t:          170
-    - super_block_t:    190
-    - plane_t:          200
-    - mode info:        210
-    - block_t:          225
-    - partition_t:      260
-    - ref_t:            280
-    - helper funcs:     300
-*/
+    /* table of contents
+        - size enums:       45
+        - pred mode enums:  55
+        - tx enums:         80
+        - frame type:       105
+        - motion vector:    115
+        - rdstat:           125
+        - context:          140
+        - frame_t:          170
+        - super_block_t:    190
+        - plane_t:          200
+        - mode info:        210
+        - block_t:          225
+        - partition_t:      260
+        - ref_t:            280
+        - helper funcs:     300
+    */
 
-// #define C1_ENC_SB_SZ 64
-// #define C1_ENCODE_MAX_PART_CNT 4
-// #define C1_ENC_TX_CAND_CNT 4
-#define C1_ENC_REF_FRAME_CNT 16
-#define C1_ENC_INTRA_CAND_CNT 4
-#define C1_ENC_INTER_CAND_CNT 2
-#define C1_SIZE_CNT 4    // 8x8 ... 64x64
-#define C1_TX_TYPE_CNT 4 // dct-dct ...
+    // #define C1_ENC_SB_SZ 64
+    // #define C1_ENCODE_MAX_PART_CNT 4
+    // #define C1_ENC_TX_CAND_CNT 4
+    #define C1_ENC_REF_FRAME_CNT 16
+    #define C1_ENC_INTRA_CAND_CNT 4
+    #define C1_ENC_INTER_CAND_CNT 2
+    #define C1_SIZE_CNT 4    // 8x8 ... 64x64
+    #define C1_TX_TYPE_CNT 4 // dct-dct ...
 
 // --- 2d size enums ---
 
@@ -122,11 +122,11 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 
 // --- rate-distortion statistics ---
 
-#define C1_RD_RATE_BIT (1 << 0)
-#define C1_RD_DIS_BIT (1 << 1)
-#define C1_RD_SSE_BIT (1 << 2)
-#define C1_RD_SAD_BIT (1 << 3)
-#define C1_RD_FIT_BIT (1 << 4)
+    #define C1_RD_RATE_BIT (1 << 0)
+    #define C1_RD_DIS_BIT (1 << 1)
+    #define C1_RD_SSE_BIT (1 << 2)
+    #define C1_RD_SAD_BIT (1 << 3)
+    #define C1_RD_FIT_BIT (1 << 4)
 /** compound rdstat information. existing statistics are indicated by "mask"
  currently only sad(sum of absolute difference) is considered, as it is the simplest.
 */
@@ -155,10 +155,10 @@ struct c1enc_ctx_s {
     */
     uint8_t avail_ref_cnt;
     /** last n p-frames, to determine if a new i frame is necessary
-    */
+     */
     uint8_t consecutive_p_cnt;
     /** estimate qstep and qindex, qstep=0 for undefined. currently unused?
-    */
+     */
     uint16_t est_qstep;
     uint8_t est_qi;
     /** referenced data stored at per super block level.
@@ -198,7 +198,7 @@ typedef struct c1enc_frame_s c1enc_frame_t;
 struct c1enc_super_block_s {
     // buffer
     int16_t diff_buf[64 * 64 * 3];
-    int32_t* coef_bufs; // coef, qcoef and dqcoef 3*3*64*64
+    int32_t *coef_bufs; // coef, qcoef and dqcoef 3*3*64*64
 
     uint16_t sb_y, sb_x; // super block is at y row and x col in frame
 
@@ -213,9 +213,9 @@ typedef struct c1enc_super_block_s c1enc_super_block_t;
 struct c1enc_plane_s {
     // persistence buffers since no compound pred+tx search.
     // pred is measured by sad and tx is measured by ??
-    int16_t *diff;  // residual owned by sb. represents the best pred and used by tx
-    int32_t *coef;  // coef is the tx result. represents best tx, used for qi refinement
-    int32_t *qcoef; // quantized coef. used for both encoding(eob calc) and reconstruction
+    int16_t *diff;   // residual owned by sb. represents the best pred and used by tx
+    int32_t *coef;   // coef is the tx result. represents best tx, used for qi refinement
+    int32_t *qcoef;  // quantized coef. used for both encoding(eob calc) and reconstruction
     int32_t *dqcoef; // dequantized coef. used for reconstruction.
 };
 typedef struct c1enc_plane_s c1enc_plane_t;
@@ -342,6 +342,15 @@ static int64_t c1_clamp32(int32_t a, int32_t min_, int32_t max_) {
 static int16_t c1_clamp16(int16_t a, int16_t min_, int16_t max_) {
     return a < min_ ? min_ : a > max_ ? max_ : a;
 }
+static int16_t c1_rgb2y(uint8_t r, uint8_t g, uint8_t b) {
+    return (int16_t)(77 * r + 150 * g + 29 * b + 0x80) >> 8;
+}
+static int16_t c1_rgb2u(uint8_t r, uint8_t g, uint8_t b) {
+    return (int16_t)(127 * r - 84 * g - 43 * b + 0x8080) >> 8;
+}
+static int16_t c1_rgb2v(uint8_t r, uint8_t g, uint8_t b) {
+    return (int16_t)(127 * r - 107 * g - 20 * b + 0x8080) >> 8;
+}
 /** ref id to array index */
 static const c1_pixbuf_t *c1enc_ctx_frame_at(const c1enc_ctx_t *ctx, const c1_pixbuf_t *pix, uint8_t ref_id) {
     int idx = (int)ctx->avail_ref_cnt - ref_id;
@@ -349,17 +358,17 @@ static const c1_pixbuf_t *c1enc_ctx_frame_at(const c1enc_ctx_t *ctx, const c1_pi
     return idx == ctx->avail_ref_cnt ? pix : ctx->ref_frames + idx;
 }
 
-#define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
-#define C1_ROUND_MID(val, div) (((val) + ((div) >> 1)) / (div))
-#define C1_ROUND_BITS(val, bits) (((val) + (1 << ((bits) - 1))) >> (bits))
+    #define C1_ROUND_UP(val, div) (((val) + (div) - 1) / (div))
+    #define C1_ROUND_MID(val, div) (((val) + ((div) >> 1)) / (div))
+    #define C1_ROUND_BITS(val, bits) (((val) + (1 << ((bits) - 1))) >> (bits))
 
-#ifdef __cplusplus
+    #ifdef __cplusplus
 }
-#endif
+    #endif
 
 #endif
 
 /*
 history:
-2026.5.9: todo: encoder structs should be used for decoder, causing 2 overheads: diff buf and cands. 
+2026.5.9: todo: encoder structs should be used for decoder, causing 2 overheads: diff buf and cands.
 */

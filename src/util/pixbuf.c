@@ -15,10 +15,13 @@ static const char *c1pb__type2str(C1_PIXBUF_TYPE t) {
     static const char *map[C1_PIXBUF_TYPE_CNT] = {
         "C1I8", "C3I8", "C1I16", "C3I16", "C1I32", "C3I32", "C1F32", "C3F32",
     };
-    return map[t];
+    return t < C1_PIXBUF_TYPE_CNT ? map[t] : "INVALID";
 }
 static const char *c1pb__bool2str(uint8_t b) {
     return b ? "true" : "false";
+}
+static int32_t c1pb__clampi32(int32_t x, int32_t min_, int32_t max_) {
+    return x < min_ ? min_ : x > max_ ? max_ : x;
 }
 
 // stt,end,step to stt,nb,step
@@ -126,6 +129,57 @@ error:
     warning("can not convert pixbuf type from %s to %s", c1pb__type2str(in->type), c1pb__type2str(type));
     c1_pixbuf_clear(&res);
     return (c1_pixbuf_t){0};
+}
+
+static int c1pb__rgb2y(uint8_t r, uint8_t g, uint8_t b) {
+    return (77 * r + 150 * g + 29 * b + 0x80) >> 8;
+}
+
+static int c1pb__rgb2u(uint8_t r, uint8_t g, uint8_t b) {
+    return (-43 * r - 84 * g + 127 * b + 0x8080) >> 8;
+}
+static int c1pb__rgb2v(uint8_t r, uint8_t g, uint8_t b) {
+    return (127 * r - 107 * g - 20 * b + 0x8080) >> 8;
+}
+// x=np.array([(77/256,150/256,29/256,0),(-43/256,-84/256,127/256,128),(127/256,-107/256,-20/256,128),(0,0,0,1)])
+// then np.linalg.inv(x)*256
+static uint8_t c1pb__yuv2r(int y, int u, int v) {
+    return (uint8_t)c1pb__clampi32((256 * y - 2 * u + 360 * v - 45889 + 0x80) >> 8, 0, 255);
+}
+static uint8_t c1pb__yuv2g(int y, int u, int v) {
+    return (uint8_t)c1pb__clampi32((256 * y - 88 * u - 185 * v + 34871 + 0x80) >> 8, 0, 255);
+}
+static uint8_t c1pb__yuv2b(int y, int u, int v) {
+    return (uint8_t)c1pb__clampi32((256 * y + 458 * u - 0 * v - 58525 + 0x80) >> 8, 0, 255);
+}
+
+c1_pixbuf_t c1_pixbuf_cvt_rgbi8_to_yuv16(const c1_pixbuf_t *in) {
+    assert_fatal_ex(in->type == C1_PIXBUF_C3I8, "expected C3I8, got %s", c1pb__type2str(in->type));
+    c1_pixbuf_t res = c1_pixbuf_create(C1_PIXBUF_C3I16, in->h, in->w);
+    for (int y = 0; y < in->h; y++) {
+        for (int x = 0; x < in->w; x++) {
+            const uint8_t *in_ptr = c1_pixbuf_getc(in, y, x);
+            int16_t *out_ptr = c1_pixbuf_geti16(&res, y, x);
+            out_ptr[0] = (int16_t)c1pb__rgb2y(in_ptr[0], in_ptr[1], in_ptr[2]);
+            out_ptr[1] = (int16_t)c1pb__rgb2u(in_ptr[0], in_ptr[1], in_ptr[2]);
+            out_ptr[2] = (int16_t)c1pb__rgb2v(in_ptr[0], in_ptr[1], in_ptr[2]);
+        }
+    }
+    return res;
+}
+c1_pixbuf_t c1_pixbuf_cvt_yuv16_to_rgbi8(const c1_pixbuf_t *in) {
+    assert_fatal_ex(in->type == C1_PIXBUF_C3I16, "expected C3I16, got %s", c1pb__type2str(in->type));
+    c1_pixbuf_t res = c1_pixbuf_create(C1_PIXBUF_C3I8, in->h, in->w);
+    for (int y = 0; y < in->h; y++) {
+        for (int x = 0; x < in->w; x++) {
+            const int16_t *in_ptr = c1_pixbuf_getc(in, y, x);
+            uint8_t *out_ptr = c1_pixbuf_get(&res, y, x);
+            out_ptr[0] = c1pb__yuv2r(in_ptr[0], in_ptr[1], in_ptr[2]);
+            out_ptr[1] = c1pb__yuv2g(in_ptr[0], in_ptr[1], in_ptr[2]);
+            out_ptr[2] = c1pb__yuv2b(in_ptr[0], in_ptr[1], in_ptr[2]);
+        }
+    }
+    return res;
 }
 
 int c1_pixbuf_paste(c1_pixbuf_t *trg, const c1_pixbuf_t *src, int y, int x) {

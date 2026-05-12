@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <string.h>
 
+uint8_t c1_lookup_q_inf_inited = 0;
+c1_quant_t c1_lookup_q_dc_inf[3][256];
+c1_quant_t c1_lookup_q_ac_inf[3][256];
+
 static uint8_t c1tx__get_scan_id(C1_TX_2D_TYPE tx_type) {
     static const uint8_t lookup[C1_TX_TYPE_CNT] = {0 /*dct-dct*/, 1 /*h-dct*/, 2 /*v-dct*/, 0};
     return lookup[tx_type];
@@ -145,11 +149,11 @@ static int c1tx__b_recon(c1enc_block_t *b) {
 
     const C1_2D_SZ tx_size = b->tx_inf.tx_size;
     const C1_TX_2D_TYPE tx_type = b->tx_inf.tx_type;
-    const int tx_hgt = c1_sz2hgt(tx_size), tx_wid = c1_sz2wid(tx_size);
+    const int txh = c1_sz2hgt(tx_size), txw = c1_sz2wid(tx_size);
     const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
     const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
 
-    int16_t *temp_out = c1_mpool_alloc_def(tx_hgt * tx_wid * sizeof(int16_t));
+    int16_t *temp_out = c1_mpool_alloc_def(txh * txw * sizeof(int16_t));
     assert_fatal(temp_out);
 
     for (int ci = 0; ci < 3; ci++) {
@@ -157,16 +161,16 @@ static int c1tx__b_recon(c1enc_block_t *b) {
         int32_t *inv_tx_in = b->p[ci].coef;
         int16_t *out = b->p[ci].diff;
 
-        for (int bi = 0; bi < bh; bi += tx_hgt) {
-            for (int bj = 0; bj < bw; bj += tx_wid) {
+        for (int bi = 0; bi < bh; bi += txh) {
+            for (int bj = 0; bj < bw; bj += txw) {
                 // transform
                 c1tx_option_t tx_opt = {.txsize = tx_size, .txtype = tx_type};
                 c1tx_inv_txfm2d(inv_tx_in, temp_out, &tx_opt);
-                inv_tx_in += tx_hgt * tx_wid;
+                inv_tx_in += txh * txw;
 
-                for (int i = 0; i < tx_hgt; i++) {
-                    for (int j = 0; j < tx_wid; j++) {
-                        out[(bi + i) * bw + bj + j] = temp_out[i * tx_wid + j];
+                for (int i = 0; i < txh; i++) {
+                    for (int j = 0; j < txw; j++) {
+                        out[(bi + i) * bw + bj + j] = temp_out[i * txw + j];
                     }
                 }
 
@@ -337,7 +341,7 @@ static void c1__quantize_pix(int32_t c, c1_quant_t q, int32_t *qc, int32_t *dqc)
 }
 
 static int c1enc__quantize_b(c1enc_block_t *b, uint8_t qi) {
-    const int tx_hgt = c1_sz2hgt(b->tx_inf.tx_size), tx_wid = c1_sz2wid(b->tx_inf.tx_size);
+    const int txh = c1_sz2hgt(b->tx_inf.tx_size), txw = c1_sz2wid(b->tx_inf.tx_size);
     const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
 
     for (uint8_t ci = 0; ci < 3; ci++) {
@@ -347,14 +351,16 @@ static int c1enc__quantize_b(c1enc_block_t *b, uint8_t qi) {
         c1_quant_t q_ac = c1q_get_q_inf(1, ci, qi);
 
         // traverse tx blocks
-        for (int bi = 0; bi < bh; bi += tx_hgt) {
-            for (int bj = 0; bj < bw; bj += tx_wid) {
+        for (int bi = 0; bi < bh; bi += txh) {
+            for (int bj = 0; bj < bw; bj += txw) {
 
                 // traverse in tx block
-                for (int i = 0; i < tx_hgt; i++) {
-                    for (int j = 0; j < tx_wid; j++) {
+                for (int i = 0; i < txh; i++) {
+                    for (int j = 0; j < txw; j++) {
                         c1_quant_t q = i == 0 && j == 0 ? q_dc : q_ac;
-                        int idx = (bi + i) * bw + bj + j; // index in block buf
+                        // index in block buf
+                        // idx = ((bi/txh)*(bw/txw)+(bj/txw))*txh*txw + i*txw+j
+                        int idx = bi * bw + bj * txh + i * txw + j;
                         c1__quantize_pix(coef[idx], q, qcoef + idx, dqcoef + idx);
                     }
                 }

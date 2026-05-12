@@ -1,9 +1,10 @@
 #include "encoder.h"
 #include "encode/search.h"
+#include "encode/types.h"
 #include "predictor.h"
 #include "quant.h"
-#include "types.h"
 #include "tables.h"
+#include "types.h"
 
 #include "math/transform.h"
 #include "util/log.h"
@@ -11,6 +12,7 @@
 #include "util/pixbuf.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,9 +49,12 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // expected height and width
     uint16_t eh = C1_ROUND_UP(pix->h, 64) * 64;
     uint16_t ew = C1_ROUND_UP(pix->w, 64) * 64;
+    // just dont treat zero size as error
+    eh += eh == 0 ? 64 : 0, ew += ew == 0 ? 64 : 0;
+    // hgt and wid per super block
     uint16_t hb = eh / 64, wb = ew / 64;
 
-    if (eh != frm->hgt_per_sb || ew != frm->wid_per_sb) {
+    if (hb != frm->hgt_per_sb || wb != frm->wid_per_sb) {
         // frame size (after rounding) has changed.
         // 1. clear sb
         for (int i = 0; i < frm->hgt_per_sb * frm->wid_per_sb; i++) {
@@ -586,7 +591,7 @@ static void c1enc__get_dif_part(c1_pixbuf_t *pix, const c1enc_partition_t *p) {
             c1enc__get_dif_part(pix, p->parts[i]);
         }
     } else {
-        c1enc_block_t *b = p->b;
+        const c1enc_block_t *b = p->b;
         for (int i = 0; i < c1_sz2hgt(p->size); i++) {
             for (int j = 0; j < c1_sz2wid(p->size); j++) {
                 int16_t *ptr = c1_pixbuf_get(pix, i + p->y, j + p->x);
@@ -597,10 +602,63 @@ static void c1enc__get_dif_part(c1_pixbuf_t *pix, const c1enc_partition_t *p) {
         }
     }
 }
-c1_pixbuf_t c1enc_get_dif_sb(const c1enc_super_block_t *sb) {
-    c1_pixbuf_t res = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
-    c1enc__get_dif_part(&res, sb->root);
-    return res;
+
+int c1enc_get_dif_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix) {
+    assert_fatal(pix->h == 64 && pix->w == 64 && pix->type == C1_PIXBUF_C3I16);
+    c1enc__get_dif_part(pix, sb->root);
+    return 0;
+}
+
+int c1enc_get_dif(const c1enc_frame_t *frm, c1_pixbuf_t *pix) {
+    for (int i = 0; i < frm->hgt_per_sb; i++) {
+        for (int j = 0; j < frm->wid_per_sb; j++) {
+            c1_pixbuf_t tmp
+                = c1_pixbuf_fromview(pix, (int[3]){i * 64, i * 64 + 64, 1}, (int[3]){j * 64, j * 64 + 64, 1});
+            c1enc_get_dif_sb(frm->super_blocks + i * frm->wid_per_sb + j, &tmp);
+            c1_pixbuf_clear(&tmp);
+        }
+    }
+    return 0;
+}
+static void c1enc__get_coef_part(c1_pixbuf_t *pix, const c1enc_partition_t *p) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++)
+            c1enc__get_coef_part(pix, p->parts[i]);
+    } else {
+        const c1enc_block_t *b = p->b;
+        assert_fatal(b->has_tx_cand);
+        const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+        const int txh = c1_sz2hgt(b->tx_inf.tx_size), txw = c1_sz2wid(b->tx_inf.tx_size);
+        for (int bi = 0; bi < bh; bi += txh) {
+            for (int bj = 0; bj < bw; bj += txw) {
+                for (int i = 0; i < txh; i++) {
+                    for (int j = 0; j < txw; j++) {
+                        int idx = bi * bw + bj * txh + i * txw + j;
+                        int16_t *out = c1_pixbuf_geti16(pix, bi + i, bj + j);
+                        for (int ci = 0; ci < 3; ci++) {
+                            out[ci] = (int16_t)c1_clamp32(b->p[ci].coef[idx], INT16_MIN, INT16_MAX);
+                        }
+                    }
+                }
+            } // bj
+        } // bi
+    }
+}
+int c1enc_get_coef_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix) {
+    assert_fatal(pix->h == 64 && pix->w == 64 && pix->type == C1_PIXBUF_C3I16);
+    c1enc__get_coef_part(pix, sb->root);
+    return 0;
+}
+int c1enc_get_coef(const c1enc_frame_t *frm, c1_pixbuf_t *pix) {
+    for (int i = 0; i < frm->hgt_per_sb; i++) {
+        for (int j = 0; j < frm->wid_per_sb; j++) {
+            c1_pixbuf_t tmp
+                = c1_pixbuf_fromview(pix, (int[3]){i * 64, i * 64 + 64, 1}, (int[3]){j * 64, j * 64 + 64, 1});
+            c1enc_get_coef_sb(frm->super_blocks + i * frm->wid_per_sb + j, &tmp);
+            c1_pixbuf_clear(&tmp);
+        }
+    }
+    return 0;
 }
 
 //
@@ -623,11 +681,11 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
         (void)0;
     }
     // respond to frame type
-    if(use_i_frame){
-        for(uint8_t idx=0;idx<ctx->avail_ref_cnt;idx++){
+    if (use_i_frame) {
+        for (uint8_t idx = 0; idx < ctx->avail_ref_cnt; idx++) {
             c1enc_ctx_clear_entry(ctx, idx);
         }
-        ctx->avail_ref_cnt=0;
+        ctx->avail_ref_cnt = 0;
     }
     frm->frame_type = use_i_frame ? C1_FRAME_I : C1_FRAME_P;
 
@@ -675,29 +733,29 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
     for (int idx = 0; idx < hb * wb; idx++) {
         c1tx_search_sb(frm->super_blocks + idx, tx_opt);
         c1enc_sb_gather_qi(frm->super_blocks + idx, opt->qp);
-        c1enc_sb_dealloc_coef_bufs(frm->super_blocks+idx);
+        c1enc_sb_dealloc_coef_bufs(frm->super_blocks + idx);
     }
     c1enc_frame_gather_qi(frm, opt->qp);
-    tx_opt.measure=C1TX_MEASURE_RATE;
-    tx_opt.tx_rng_max=TX2TYPE_IDEN+1;
-    for(int idx=0;idx<hb*wb;idx++){
-        c1enc_super_block_t*sb=frm->super_blocks+idx;
+    tx_opt.measure = C1TX_MEASURE_RATE;
+    tx_opt.tx_rng_max = TX2TYPE_IDEN + 1;
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1enc_super_block_t *sb = frm->super_blocks + idx;
         // currenty use y plance ac qstep to assess, todo: ?
-        tx_opt.qstep=c1_lookup_q_ac[0][sb->q_index];
+        tx_opt.qstep = c1_lookup_q_ac[0][sb->q_index];
         c1tx_search_sb(sb, tx_opt);
         c1enc_quantize_sb(sb);
 
         c1enc_sb_dqc2c(sb);
         c1tx_reconstruct(sb);
 
-        c1pd_reconstruct_sb(sb,frm,ctx); // pred is done again here.
+        c1pd_reconstruct_sb(sb, frm, ctx); // pred is done again here.
         c1enc_sb_dealloc_coef_bufs(sb);
     }
 
     // (4) update ctx
-    
-    c1enc_push_ref(ctx,frm);
-    ctx->est_qi=frm->q_index;
+
+    c1enc_push_ref(ctx, frm);
+    ctx->est_qi = frm->q_index;
     ctx->consecutive_p_cnt += !use_i_frame;
 
     // assess/write to bitstream?

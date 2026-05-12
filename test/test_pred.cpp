@@ -74,7 +74,8 @@ int main() {
     c1enc_sb_repr(stdout, sb, 0);
 
     assert_fatal(c1enc_part_gather_residual(sb->root, &frm.pix, &ctx, 0) >= 0);
-    c1_pixbuf_t dif = c1enc_get_dif_sb(sb);
+    c1_pixbuf_t dif = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
+    c1enc_get_dif_sb(sb, &dif);
     for (int i = 0; i < 64; i++) {
         for (int j = 0; j < 64; j++) {
             for (int ci = 0; ci < 3; ci++) {
