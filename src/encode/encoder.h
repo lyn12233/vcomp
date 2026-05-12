@@ -90,7 +90,7 @@ int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t *sb);
  */
 int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, C1_2D_SZ targ_size, //
                          uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                                  //
-                         uint16_t buf_offs);
+                         uint32_t buf_offs);
 /** reset candidate count in blocks recursively in partition
  */
 int c1enc_partition_reset_cands(c1enc_partition_t *part);
@@ -102,7 +102,7 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *part, int ind);
 
 int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
                        uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
-                       uint16_t buf_offs);
+                       uint32_t buf_offs);
 int c1enc_block_clear(c1enc_block_t *b);
 int c1enc_block_validate(c1enc_block_t *b);
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);

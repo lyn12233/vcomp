@@ -205,9 +205,9 @@ static int c1enc__part_set_coef_bufs(c1enc_partition_t *p, //
     } else {
         c1enc_block_t *b = p->b;
         for (int ci = 0; ci < 3; ci++) {
-            b->p[ci].coef = coef_bufs ? coef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
-            b->p[ci].qcoef = qcoef_bufs ? qcoef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
-            b->p[ci].dqcoef = dqcoef_bufs ? dqcoef_bufs + p->buf_offs * 3 + h * w * ci : NULL;
+            b->p[ci].coef = coef_bufs ? coef_bufs + p->buf_offs + h * w * ci : NULL;
+            b->p[ci].qcoef = qcoef_bufs ? qcoef_bufs + p->buf_offs + h * w * ci : NULL;
+            b->p[ci].dqcoef = dqcoef_bufs ? dqcoef_bufs + p->buf_offs + h * w * ci : NULL;
         }
     }
     return 0;
@@ -259,7 +259,7 @@ int c1enc_sb_dealloc_coef_bufs(c1enc_super_block_t *sb) {
 
 int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D_SZ size, C1_2D_SZ targ_size, //
                          uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,                                  //
-                         uint16_t buf_offs) {
+                         uint32_t buf_offs) {
     // 0. case size change
     // note init means {0}, which may or may not effect
     if (part->size != size) {
@@ -301,7 +301,7 @@ int c1enc_partition_init(c1enc_partition_t *part, c1enc_super_block_t *sb, C1_2D
                 *part->parts[i] = (c1enc_partition_t){0};
                 c1enc_partition_init(part->parts[i], sb, new_sz, targ_size,      //
                                      y + offs[i][0], x + offs[i][1], sb_y, sb_x, //
-                                     buf_offs + i * new_hgt * new_wid);
+                                     buf_offs + i * new_hgt * new_wid * 3);
             }
         }
     }
@@ -375,7 +375,7 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
 
 int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
                        uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
-                       uint16_t buf_offs) {
+                       uint32_t buf_offs) {
     if (b->size != size) {
         c1enc_block_clear(b);
     }
@@ -394,7 +394,7 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
 
     // assign buf in sb for planes
     for (int ci = 0; ci < 3; ci++) {
-        b->p[ci].diff = sb->diff_buf + buf_offs * 3 + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
+        b->p[ci].diff = sb->diff_buf + buf_offs + c1_sz2hgt(size) * c1_sz2wid(size) * ci;
         b->p[ci].coef = NULL;
         b->p[ci].qcoef = NULL;
         b->p[ci].dqcoef = NULL;

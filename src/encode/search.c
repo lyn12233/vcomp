@@ -767,7 +767,7 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
             *p->parts[i] = (c1enc_partition_t){0};
             c1enc_partition_init(p->parts[i], p->sb, new_sz, new_sz,                     //
                                  p->y + offs[i][0], p->x + offs[i][1], p->sb_y, p->sb_x, //
-                                 p->buf_offs + i * new_hgt * new_wid);
+                                 p->buf_offs + i * new_hgt * new_wid * 3);
 
             // conduct search and further divide
             c1enc_search_p(p->parts[i], pix, ctx, opt);

@@ -197,6 +197,9 @@ typedef struct c1enc_frame_s c1enc_frame_t;
 */
 struct c1enc_super_block_s {
     // buffer
+    /** buf for residuals, first assigned to each partition, then assign 3 planes. for example for 4 32x32 blocks, it is
+     [[y1u1v1]...[y4u4v4]]. offest indicated by buf_offs in partitions and blocks.
+     */
     int16_t diff_buf[64 * 64 * 3];
     int32_t *coef_bufs; // coef, qcoef and dqcoef 3*3*64*64
 
@@ -284,7 +287,7 @@ struct c1enc_partition_s {
     // attr neccessary to re-create a block
     uint8_t y, x;
     uint16_t sb_y, sb_x;
-    uint16_t buf_offs; // offset in buf provided by super block, per int16_t*3
+    uint32_t buf_offs; // offset in buf provided by super block, per int16_t
     c1enc_super_block_t *sb;
 
     c1enc_block_t *b;
