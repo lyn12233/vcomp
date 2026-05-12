@@ -18,6 +18,7 @@ add_library(vcomp_flags_asan INTERFACE)
 set(VCOMP_ENABLE_TESTS ON CACHE BOOL "build tests")
 set(VCOMP_ENABLE_LOGGING ON CACHE BOOL "print error messages using provided callback")
 set(VCOMP_ENABLE_ASAN ON CACHE BOOL "enable asan")
+set(VCOMP_ENABLE_PROFILE ON CACHE BOOL "enable profiler")
 
 foreach(targ vcomp_flags vcomp_flags_asan)
     # 2. global incdir
@@ -30,6 +31,7 @@ foreach(targ vcomp_flags vcomp_flags_asan)
     # 3. handle option
     target_compile_definitions(${targ} INTERFACE 
         $<$<BOOL:${VCOMP_ENABLE_LOGGING}>:CONFIG_LOG=ON>
+        $<$<BOOL:${VCOMP_ENABLE_PROFILE}>:CONFIG_PROFILE=ON>
     )
     target_compile_definitions(${targ} INTERFACE
         $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0601>

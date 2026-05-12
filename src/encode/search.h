@@ -204,6 +204,9 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                     const c1enc_search_option_t *opt);
 
+// --- profiler ---
+extern c1_profile_t c1enc_search_sb_prof;
+
     #ifdef __cplusplus
 }
     #endif

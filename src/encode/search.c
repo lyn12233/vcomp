@@ -36,6 +36,13 @@
 #define C1__INTER_STEP_0_MAX 64
 #define C1__FRAME_SAD_MAX_DEV_SCALE 8
 
+// --- profile support ---
+
+c1_profile_t c1enc_search_sb_prof = {0};
+#define C1ENC_SEARCH_SB_ENTER() c1_profile_enter(&c1enc_search_sb_prof)
+#define C1ENC_SEARCH_SB_EXIT() c1_profile_exit(&c1enc_search_sb_prof)
+#define C1ENC_SEARCH_SB_STEP(step) c1_profile_step(&c1enc_search_sb_prof, step)
+
 static int c1enc__cmp(uint32_t a, uint32_t b) {
     return (a > b) - (a < b);
 }
@@ -709,7 +716,7 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
 int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                         const c1enc_search_option_t *opt) {
     if (p->is_partition) {
-        debug("skip");
+        // debug("skip");
         for (int i = 0; i < 4; i++) {
             c1enc_search_divide(p->parts[i], pix, ctx, opt);
         }
@@ -737,7 +744,7 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 
     // divide if SAD exceeds
     if (m_intra > opt->thre_sad_max_b && m_inter > opt->thre_sad_max_b) {
-        debug("divide: %u,%u", p->y, p->x);
+        // debug("divide: %u,%u", p->y, p->x);
         // (1) update indicator
         p->is_partition = 1;
         // (2) dealloc block
@@ -809,6 +816,7 @@ static uint32_t c1enc__search_decide_sad_max(uint32_t a, uint32_t b) {
     }
     return b;
 }
+
 int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                     const c1enc_search_option_t *opt) {
     c1enc_search_option_validate(opt);
@@ -820,14 +828,21 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
     limited_opt.intra_rng_max = C1_PRED_D135 + 1;
     // limited_opt.thre_sad_max_b = 1 << 12;
 
+    C1ENC_SEARCH_SB_ENTER();
     c1enc_search_p(sb->root, pix, ctx, &limited_opt);
+    C1ENC_SEARCH_SB_STEP(1);
     c1enc_part_gather_rdstat(sb->root);
+    C1ENC_SEARCH_SB_STEP(2);
     // make SAD threshold adaptive. (4*4) is averaging 64x64->16x16 currently
     limited_opt.thre_sad_max_b = c1enc__search_decide_sad_max( //
         sb->root->stats.sad / (4 * 4), limited_opt.thre_sad_max_b);
 
+    // C1ENC_SEARCH_SB_STEP(3);
     c1enc_search_merge(sb->root, pix, ctx, &limited_opt);
+    C1ENC_SEARCH_SB_STEP(3);
     c1enc_search_divide(sb->root, pix, ctx, &limited_opt);
+    C1ENC_SEARCH_SB_STEP(4);
     c1enc_search_p(sb->root, pix, ctx, opt);
+    C1ENC_SEARCH_SB_EXIT();
     return 0;
 }

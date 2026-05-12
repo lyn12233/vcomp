@@ -16,9 +16,11 @@ add_executable(test_search test_search.c)
 target_link_libraries(test_search PRIVATE vcomp_util_asan vcomp_enc_asan)
 add_executable(test_pred test_pred.cpp)
 target_link_libraries(test_pred PRIVATE vcomp_util vcomp_enc)
+add_executable(test_encode test_encode.cpp)
+target_link_libraries(test_encode PRIVATE vcomp_util vcomp_enc)
 
 # for targets without asan
-foreach(targ test_ent test_pred)
+foreach(targ test_ent test_pred test_encode)
     target_link_libraries(${targ} PRIVATE vcomp_flags)
 endforeach()
 
@@ -39,6 +41,6 @@ foreach(targ test_ent)
 endforeach()
 
 # for targets with opencv
-foreach(targ test_pred)
+foreach(targ test_pred test_encode)
     target_link_libraries(${targ} PRIVATE ${OpenCV_LIBS})
 endforeach()

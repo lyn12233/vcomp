@@ -52,6 +52,48 @@ c1_log_common_noret [[noreturn]] (FILE *pipe,                                   
     exit(-1);
 }
 
+#ifdef CONFIG_PROFILE
+    #define C1_PROFILE_STEP_CNT 16
+typedef struct {
+    uint64_t cnt;
+    uint64_t last_tm; // enter time
+    uint64_t sum_tm[C1_PROFILE_STEP_CNT];
+} c1_profile_t;
+static void c1_profile_reset(c1_profile_t *prof) {
+    *prof = (c1_profile_t){0};
+}
+static void c1_profile_enter(c1_profile_t *prof) {
+    prof->cnt++;
+    prof->last_tm = (uint64_t)clock();
+}
+static void c1_profile_step(c1_profile_t *prof, int step) {
+    uint64_t cur_time = (uint64_t)clock();
+    uint64_t last_time = prof->last_tm;
+    prof->sum_tm[step] += cur_time - last_time;
+    prof->last_tm = (uint64_t)clock();
+}
+static void c1_profile_exit(c1_profile_t *prof) {
+    c1_profile_step(prof, 0);
+}
+static void c1_profile_repr(FILE *fp, c1_profile_t *prof, const char *nm, int nb) {
+    fprintf(fp, "Profile(\"%s\", [%llu] [", nm, prof->cnt);
+    for (int i = 1; i <= nb; i++) {
+        fprintf(fp, "%llu|", prof->sum_tm[i]);
+    }
+    fprintf(fp, "%llu])", prof->sum_tm[0]);
+}
+#else
+typedef struct {
+} c1_profile_t;
+static void c1_profile_reset(c1_profile_t *prof) {}
+static void c1_profile_enter(c1_profile_t *prof) {}
+static void c1_profile_step(c1_profile_t *prof, int step) {}
+static void c1_profile_exit(c1_profile_t *prof) {}
+static void c1_profile_repr(FILE *fp, c1_profile_t *prof, const char *nm, int nb) {
+    fprintf(fp, "Profile([NA])");
+}
+#endif
+
 #define debug(msg, ...) c1_log_common(stdout, "[DEBUG]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
 #define info_(msg, ...) c1_log_common(stdout, "[INFO]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
 #define warning(msg, ...) c1_log_common(stdout, "[WARN]", NULL, NULL, __LINE__, 0, msg, ##__VA_ARGS__)
