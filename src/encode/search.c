@@ -39,9 +39,13 @@
 // --- profile support ---
 
 c1_profile_t c1enc_search_sb_prof = {0};
+c1_profile_t c1enc_search_is_divide_prof = {0};
 #define C1ENC_SEARCH_SB_ENTER() c1_profile_enter(&c1enc_search_sb_prof)
 #define C1ENC_SEARCH_SB_EXIT() c1_profile_exit(&c1enc_search_sb_prof)
 #define C1ENC_SEARCH_SB_STEP(step) c1_profile_step(&c1enc_search_sb_prof, step)
+#define C1ENC_SEARCH_IS_DIVIDE_ENTER() c1_profile_enter(&c1enc_search_is_divide_prof)
+#define C1ENC_SEARCH_IS_DIVIDE_EXIT() c1_profile_exit(&c1enc_search_is_divide_prof)
+#define C1ENC_SEARCH_IS_DIVIDE_STEP(step) c1_profile_step(&c1enc_search_is_divide_prof, step)
 
 static int c1enc__cmp(uint32_t a, uint32_t b) {
     return (a > b) - (a < b);
@@ -337,10 +341,10 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
     // dir mode in z1/z3 trimmed for the edges may not be avail for recon/decode
     uint32_t mode_skip_mask = 0;
     if (b->yoff > 0) {
-        mode_skip_mask |= (1 << C1_PRED_D45) | (1 << C1_PRED_D67);
+        mode_skip_mask &= ~(1 << C1_PRED_D45) & ~(1 << C1_PRED_D67);
     }
     if (b->xoff > 0) {
-        mode_skip_mask |= 1 << C1_PRED_D203;
+        mode_skip_mask &= ~(1 << C1_PRED_D203);
     }
 
     if (opt->intra_try_cfl || !opt->intra_try_uv) {
@@ -355,10 +359,16 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
                 continue;
             pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
             c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
-            for (uint8_t ci = 0; ci < 3; ci++) {
-                pred_opt.ci = ci;
-                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
-                stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
+            if (opt->intra_only_y) {
+                pred_opt.ci = 0;
+                c1pd_predict(b, b->p[0].diff, pix, &pred_opt, NULL);
+                stat.sad = c1enc__calc_p_sad(b, pix, &pred_opt) * 3;
+            } else {
+                for (uint8_t ci = 0; ci < 3; ci++) {
+                    pred_opt.ci = ci;
+                    c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
+                    stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
+                }
             }
             c1enc_block_add_intra_cand(b, &mi, &stat);
         } // mode search loop
@@ -378,6 +388,7 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
                     pred_opt.ci = ci;
                     c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_outputs[ci]);
                     stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
+                    // todo: at recon, this refers to undefined pixels.
                 }
                 c1enc_block_add_intra_cand(b, &mi, &stat);
             } // mode search loop
@@ -407,9 +418,10 @@ int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_s
                 c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
                 *(sad_targ[ci]) += c1enc__calc_p_sad(b, pix, &pred_opt);
             }
+
+            // add single mode cand and bubble-sort
             best_ymode[best_cnt] = best_uvmode[best_cnt] = mode;
             best_ysad[best_cnt] = ysad, best_uvsad[best_cnt] = uvsad;
-            // add single mode cand
             for (int i = best_cnt; i >= 1; i--) {
                 // new cand is at index i
                 if (ysad < best_ysad[i - 1]) {
@@ -544,8 +556,8 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
     uint8_t step_0 = C1__INTER_STEP_0_MAX;
     while (!(opt->inter_init_steps_mask & step_0) && step_0)
         step_0 /= 2;
-    if (!step_0)
-        return 0;
+    // if (!step_0)
+    //     return 0;
 
     // prepare search matrix record
     uint32_t matrix_nb = (step_0 * 2 + 1) * (step_0 * 2 + 1);
@@ -617,7 +629,7 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
 int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                        const c1enc_search_option_t *opt) {
     // criterions:
-    // (1) sub pred modes not worse
+    // (1) sub pred type not worse
     // (2) sub SADs smooth
     // (3) sum of sub SADs within some fraction of the whole frame
     // (4) results in better SAD
@@ -680,13 +692,16 @@ int c1enc_search_merge(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1enc
     assert_fatal(!p->b && (p->b = malloc(sizeof(c1enc_block_t))));
     *p->b = (c1enc_block_t){0};
     c1enc_block_update(p->b, p->sb, p->size, p->y, p->x, p->sb_y, p->sb_x, p->buf_offs);
+    c1enc_search_option_t limited_opt = *opt;
+    limited_opt.intra_rng_max = C1_PRED_DC + 1;
+    limited_opt.inter_init_steps_mask = 0;
     if (try_intra) {
         // debug("try intra merge-search %d,%d", p->y, p->x);
-        c1enc_search_intra_b(p->b, pix, opt);
+        c1enc_search_intra_b(p->b, pix, &limited_opt);
         assert_fatal(p->b->intra_cand_cnt > 0);
     }
     if (try_inter) {
-        c1enc_search_inter_b(p->b, pix, ctx, opt);
+        c1enc_search_inter_b(p->b, pix, ctx, &limited_opt);
         assert_fatal(p->b->inter_cand_cnt > 0);
     }
     int can_merge
@@ -744,7 +759,7 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
 
     // divide if SAD exceeds
     if (m_intra > opt->thre_sad_max_b && m_inter > opt->thre_sad_max_b) {
-        // debug("divide: %u,%u", p->y, p->x);
+        C1ENC_SEARCH_IS_DIVIDE_ENTER();
         // (1) update indicator
         p->is_partition = 1;
         // (2) dealloc block
@@ -773,6 +788,7 @@ int c1enc_search_divide(c1enc_partition_t *p, const c1_pixbuf_t *pix, const c1en
             c1enc_search_p(p->parts[i], pix, ctx, opt);
             c1enc_search_divide(p->parts[i], pix, ctx, opt);
         }
+        C1ENC_SEARCH_IS_DIVIDE_EXIT();
     }
     return 0;
 }
@@ -821,17 +837,22 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
                     const c1enc_search_option_t *opt) {
     c1enc_search_option_validate(opt);
     c1enc_search_option_t limited_opt = *opt;
+
     limited_opt.inter_init_steps_mask = 16 | 8;
     limited_opt.inter_smooth_lambda = 0;
+    limited_opt.inter_only_y = 1;
+
     limited_opt.intra_try_uv = 0;
     limited_opt.intra_try_cfl = 0;
-    limited_opt.intra_rng_max = C1_PRED_D135 + 1;
+    limited_opt.intra_rng_max = C1_PRED_V + 1;
+    limited_opt.intra_only_y = 1;
     // limited_opt.thre_sad_max_b = 1 << 12;
 
     C1ENC_SEARCH_SB_ENTER();
     c1enc_search_p(sb->root, pix, ctx, &limited_opt);
     C1ENC_SEARCH_SB_STEP(1);
     c1enc_part_gather_rdstat(sb->root);
+
     C1ENC_SEARCH_SB_STEP(2);
     // make SAD threshold adaptive. (4*4) is averaging 64x64->16x16 currently
     limited_opt.thre_sad_max_b = c1enc__search_decide_sad_max( //

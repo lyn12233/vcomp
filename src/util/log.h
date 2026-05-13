@@ -56,6 +56,7 @@ c1_log_common_noret [[noreturn]] (FILE *pipe,                                   
     #define C1_PROFILE_STEP_CNT 16
 typedef struct {
     uint64_t cnt;
+    uint32_t recurse_cnt, recurse_depth;
     uint64_t last_tm; // enter time
     uint64_t sum_tm[C1_PROFILE_STEP_CNT];
 } c1_profile_t;
@@ -64,9 +65,16 @@ static void c1_profile_reset(c1_profile_t *prof) {
 }
 static void c1_profile_enter(c1_profile_t *prof) {
     prof->cnt++;
+    prof->recurse_cnt++;
+    if (prof->recurse_depth < prof->recurse_cnt)
+        prof->recurse_depth = prof->recurse_cnt;
+    if (prof->recurse_cnt > 1)
+        return;
     prof->last_tm = (uint64_t)clock();
 }
 static void c1_profile_step(c1_profile_t *prof, int step) {
+    if (prof->recurse_cnt > 1)
+        return;
     uint64_t cur_time = (uint64_t)clock();
     uint64_t last_time = prof->last_tm;
     prof->sum_tm[step] += cur_time - last_time;
@@ -74,6 +82,7 @@ static void c1_profile_step(c1_profile_t *prof, int step) {
 }
 static void c1_profile_exit(c1_profile_t *prof) {
     c1_profile_step(prof, 0);
+    prof->recurse_cnt--;
 }
 static void c1_profile_repr(FILE *fp, c1_profile_t *prof, const char *nm, int nb) {
     fprintf(fp, "Profile(\"%s\", [%llu] [", nm, prof->cnt);

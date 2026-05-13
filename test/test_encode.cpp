@@ -2,6 +2,7 @@
 #include "encode/predictor.h"
 #include "encode/search.h"
 #include "encode/types.h"
+#include "util/log.h"
 #include "util/pixbuf.h"
 
 #include <assert.h>
@@ -17,6 +18,8 @@
 
 using std::cout;
 using std::endl;
+
+c1_profile_t search_prof={0};
 
 int main() {
     std::ios_base::sync_with_stdio();
@@ -44,20 +47,28 @@ int main() {
     srch_opt.thre_mat_is_dif_shift = 2;
     srch_opt.thre_mat_is_dif_delta = 1 << 12;
     // todo: impl
-    srch_opt.thre_sad_max_b = 1 << 12;
+    srch_opt.thre_sad_max_b = 1 << 20;
 
     // search in a order that ensure prediction edges(at least bh+bw<=64*2) exist ?
     const int hb = frm.hgt_per_sb, wb = frm.wid_per_sb;
 
     for (int idx = 0; idx < hb * wb; idx++) {
+        c1_profile_enter(&search_prof);
         c1enc_search_sb(frm.super_blocks + idx, &frm.pix, &ctx, &srch_opt);
         // gather mode and diff
         c1enc_part_gather_pred_type(frm.super_blocks[idx].root);
         c1enc_part_gather_residual(frm.super_blocks[idx].root, &frm.pix, &ctx, 0);
         // info_("searched %u", idx);
+        c1_profile_exit(&search_prof);
     }
 
     c1enc_frame_clear(&frm);
 
     c1_profile_repr(stdout, &c1enc_search_sb_prof, "prediction search", 4);
+    cout<<endl;
+    c1_profile_repr(stdout, &c1enc_search_is_divide_prof, "divide times", 0);
+    cout<<endl;
+    c1_profile_repr(stdout, &search_prof, "search times", 0);
+    cout<<endl;
+    c1_profile_repr(stdout, &c1pd_predict_prof, "predict times", 0);
 }

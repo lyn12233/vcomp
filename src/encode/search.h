@@ -97,11 +97,13 @@ typedef struct {
     uint8_t inter_smooth_lambda;    // m = (sad|sad_subsamp) + lambda*(abs(x)+abs(y))/4
     uint8_t inter_newcand_cnt;      // new candidates from search result to add to block's inter cands
     uint8_t inter_ref_idx; // index of ref frame in encoder context, note the index in array is avail_frame_cnt-ref_id
+    uint8_t inter_only_y;  // only measure the y plane rdstat for inter modes, mult 3 as whole
     // - intra search option
     uint8_t try_intra;          // intra search switch
     uint8_t intra_try_uv;       // try a different prediction mode for uv channels
     uint8_t intra_try_cfl;      // try chroma-from-luma. try_cfl and try_uv should not be both set
     C1_PRED_MODE intra_rng_max; // max intra mode (excluded) to search
+    uint8_t intra_only_y;       // only measure the y plane rdstat for intra modes.
     // partition level
     // - merging/dividing option
     // -- to tell if mode(intra/inter) is obviously better than another: loss1<((loss2*mult)>>shift)
@@ -204,6 +206,7 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
 
 // --- profiler ---
 extern c1_profile_t c1enc_search_sb_prof;
+extern c1_profile_t c1enc_search_is_divide_prof;
 
     #ifdef __cplusplus
 }

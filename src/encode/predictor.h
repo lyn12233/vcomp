@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 #include "types.h"
-
+#include "util/log.h"
 #include "util/pixbuf.h"
 
 #include <stdint.h>
@@ -102,6 +102,8 @@ static const char *c1pd_mode2str(C1_PRED_MODE mode) {
         return "?";
     }
 }
+
+extern c1_profile_t c1pd_predict_prof;
 
 #ifdef __cplusplus
 }

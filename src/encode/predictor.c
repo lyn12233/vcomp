@@ -29,6 +29,10 @@
         - all in one:               460
 */
 
+#define C1PD_PREDICT_ENTER() c1_profile_enter(&c1pd_predict_prof)
+#define C1PD_PREDICT_EXIT() c1_profile_exit(&c1pd_predict_prof)
+#define C1PD_PREDICT_STEP(step) c1_profile_step(&c1pd_predict_prof, step)
+
 // --- utils ---
 
 static void c1pd__memset16(int16_t *output, int16_t val, int nb) {
@@ -296,22 +300,14 @@ static const int16_t c1pd__128_border[128] = {
     128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
 };
 
-static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output,          //
-                               const c1_pixbuf_t *pix, const c1pd_option_t *opt, //
-                               int16_t **border_above, int16_t **border_left) {
-    // 0. abbrv attrs from b
+static const int16_t *c1pd__get_border_above(const c1enc_block_t *b, const c1_pixbuf_t *pix, int16_t **border_above) {
     const uint8_t bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
     const int border_x = (int)b->sb_x * 64 + b->xoff - 1;
     const int border_y = (int)b->sb_y * 64 + b->yoff - 1;
-    // 1. prepare above and left
-    uint8_t avail_above, avail_left; // indices for dc pred
     const int16_t *above;
-    const int16_t *left;
     if (border_y < 0) {
-        avail_above = 0;
         above = c1pd__128_border + 1;
     } else {
-        avail_above = 1;
         if (!*border_above) {
             const int delta = border_x; // delta>=-1
             assert_fatal(*border_above = malloc((bh + bw) * sizeof(int16_t)));
@@ -329,11 +325,17 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output,         
         }
         above = *border_above + 1;
     }
+    return above;
+}
+
+static const int16_t *c1pd__get_border_left(const c1enc_block_t *b, const c1_pixbuf_t *pix, int16_t **border_left) {
+    const uint8_t bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int border_x = (int)b->sb_x * 64 + b->xoff - 1;
+    const int border_y = (int)b->sb_y * 64 + b->yoff - 1;
+    const int16_t *left;
     if (border_x < 0) {
-        avail_left = 0;
         left = c1pd__128_border + 1;
     } else {
-        avail_left = 1;
         if (!*border_left) {
             const int delta = border_y;
             assert_fatal(*border_left = malloc((bh + bw) * sizeof(int16_t)));
@@ -350,17 +352,35 @@ static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output,         
         }
         left = *border_left + 1;
     }
+    return left;
+}
 
-    // gather pix if src is used in prediction (currently only paeth mode)
+static int c1pd__predict_intra(const c1enc_block_t *b, int16_t *output,          //
+                               const c1_pixbuf_t *pix, const c1pd_option_t *opt, //
+                               int16_t **border_above, int16_t **border_left) {
+    // 0. abbrv attrs from b
+    const uint8_t bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
+    const int bx = (int)b->sb_x * 64 + b->xoff;
+    const int by = (int)b->sb_y * 64 + b->yoff;
+    // 1. prepare above and left
+    //      - indices for dc pred
+    const uint8_t avail_above = by > 0;
+    const uint8_t avail_left = bx > 0;
+    //      - borders, bh+bw length
+    const int16_t *above;
+    const int16_t *left;
+    above = c1pd__get_border_above(b, pix, border_above);
+    left = c1pd__get_border_left(b, pix, border_left);
+
+    // gather pix if src is used in prediction
+    // int16_t *input = c1_mpool_alloc_def(bh * bw * sizeof(int16_t));
+    // for (uint8_t i = 0; i < bh; i++) {
+    //     for (uint8_t j = 0; j < bw; j++) {
+    //         input[i * bw + j] = *c1_pixbuf_geti16c(pix, by + (int)i, bx + (int)j);
+    //     }
+    // }
     int16_t *input = NULL;
-    if (opt->mode == C1_PRED_PAETH) {
-        input = c1_mpool_alloc_def(bh * bw * sizeof(int16_t));
-        for (uint8_t i = 0; i < bh; i++) {
-            for (uint8_t j = 0; j < bw; j++) {
-                input[i * bw + j] = *c1_pixbuf_geti16c(pix, border_y + 1 + (int)i, border_x + 1 + (int)j);
-            }
-        }
-    }
+
     // conduct pred, special case for dc mode
     c1pd_intra_func_t pred_func;
     if (opt->mode == C1_PRED_DC) {
@@ -398,77 +418,88 @@ static int c1pd__predict_inter(const c1enc_block_t *b, int16_t *output, //
 
 static int c1pd__predict_cfl(const c1enc_block_t *b, int16_t *output,            //
                              const c1_pixbuf_t *pix, const c1_pixbuf_t *pix_ref, //
-                             int8_t *cfl_alpha, uint8_t has_cfl_alpha) {
+                             int8_t *cfl_alpha, uint8_t has_cfl_alpha,           //
+                             int16_t **border_above, int16_t **border_left) {
     const int bw = c1_sz2wid(b->size), bh = c1_sz2hgt(b->size);
     const int by = (int)b->sb_y * 64 + b->yoff;
     const int bx = (int)b->sb_x * 64 + b->xoff;
 
+    // 2. derive implicit dc
+    int32_t dc = 0, ndc = 0;
+    if (bx > 0) {
+        const int16_t *left = c1pd__get_border_left(b, pix, border_left);
+        for (int i = 0; i < bh; i++) {
+            dc += left[i];
+        }
+        ndc += bh;
+    }
+    if (by > 0) {
+        const int16_t *above = c1pd__get_border_above(b, pix, border_above);
+        for (int j = 0; j < bw; j++) {
+            dc += above[j];
+        }
+        ndc += bw;
+    }
+    dc = ndc ? (dc + ndc / 2) / ndc : 128;
+
     // 1. calc cfl_alpha if required
     if (!has_cfl_alpha) {
 
-        // regr y = alpha*x+dc
-        int32_t sx = 0, sy = 0, sxx = 0, sxy = 0;
+        // regress y = alpha*x+dc, partial_alpha L = sum 2(alpha*x_i+dc-y_i)x_i =0
+        // then alpha = (sum x_i(y_i-dc))/(sum x_i^2)
+        // overflow: 64*64*255*255<2**28
+        int32_t sxx = 0, sxy = 0;
         for (int i = 0; i < bh; i++) {
             for (int j = 0; j < bw; j++) {
                 // x is luma and y is chroma. 16 bit sufficient
                 int16_t x = *c1_pixbuf_geti16c(pix_ref, by + i, bx + j);
                 int16_t y = *c1_pixbuf_geti16c(pix, by + i, bx + j);
-                sx += x, sy += y, sxx += x * x, sxy += x * y;
+                sxx += x * x, sxy += x * (y - dc);
             }
         }
-        // calculate clamp(divident/divisor, -16, 16)
-        // int32_t is enought: n*sxx < 64*64*255*255 < 2**28
-        int32_t divident = bh * bw * sxy - sx * sy;
-        int32_t divisor = (bh * bw * sxx - sx * sx) / 64; // alpha is scaled up in 64
+        // calculate clamp(sxy/sxx, -1/4, 1/4)*64
+        int64_t divident = sxy, divisor = sxx;
+        // alpha is scaled up in 64, scale this to sxx and sxy
+
         if (divisor < 0)
             divisor = -divisor, divident = -divident;
-        divident += divisor / 2; // rounding
+        divident += divident >= 0 ? divisor / 2 : -divisor / 2; // rounding
         // speed up division?
         if (divisor == 0) {
-            *cfl_alpha = divident < 0 ? -16 : 16;
-        } else if (divident < -16 * divisor)
+            *cfl_alpha = 0;
+        } else if (divident * 4 < -divisor)
             *cfl_alpha = -16;
-        else if (divident > 16 * divisor) {
+        else if (divident * 4 > divisor) {
             *cfl_alpha = 16;
         } else {
-            *cfl_alpha = (int8_t)c1pd__clamp(divident / divisor, -16, 16);
+            *cfl_alpha = (int8_t)c1_clamp64(divident * 64 / divisor, -16, 16);
         }
     }
-
-    // 2. derive implicit dc
-    int16_t dc = 0, ndc = 0;
-    if (bx > 0) {
-        for (int i = 0; i < bh && by + i < pix->h; i++) {
-            dc += *c1_pixbuf_geti16c(pix, by + i, bx - 1), ndc++;
-        }
-    }
-    if (by > 0) {
-        for (int j = 0; j < bw && bx + j < pix->w; j++) {
-            dc += *c1_pixbuf_geti16c(pix, by - 1, bx + j), ndc++;
-        }
-    }
-    dc = ndc ? dc / ndc : 128;
 
     // 3. conduct pred
 
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++) {
             int16_t x = *c1_pixbuf_geti16c(pix_ref, by + i, bx + j);
-            output[i * bw + j] = dc + C1_ROUND_MID(x * (*cfl_alpha), 64);
+            output[i * bw + j] = (int16_t)dc + C1_ROUND_MID(x * (*cfl_alpha), 64);
         }
     }
     return 0;
 }
 
+c1_profile_t c1pd_predict_prof = {0};
+
 int c1pd_predict(c1enc_block_t *b, int16_t *output, //
                  const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t *cfl_alpha) {
+    C1PD_PREDICT_ENTER();
+
     int r = 0;
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
     int16_t **border_above = &b->p[opt->ci].border_above;
     int16_t **border_left = &b->p[opt->ci].border_left;
     if (opt->use_cfl && opt->ci > 0) {
         c1_pixbuf_t ref_pix = c1_pixbuf_fromchnl(pix, 0);
-        r = c1pd__predict_cfl(b, output, &ci_pix, &ref_pix, cfl_alpha, opt->has_cfl_alpha);
+        r = c1pd__predict_cfl(b, output, &ci_pix, &ref_pix, cfl_alpha, opt->has_cfl_alpha, border_above, border_left);
         c1_pixbuf_clear(&ref_pix);
     } else if (c1_pred_is_inter(opt->mode)) {
         r = c1pd__predict_inter(b, output, &ci_pix, opt);
@@ -477,9 +508,11 @@ int c1pd_predict(c1enc_block_t *b, int16_t *output, //
     } else {
         warning2("invalid pred mode %d", opt->mode);
         r = -1;
+        goto dtor;
     }
 dtor:
     c1_pixbuf_clear(&ci_pix);
+    C1PD_PREDICT_EXIT();
     return r;
 }
 
