@@ -18,6 +18,8 @@ add_executable(test_pred test_pred.cpp)
 target_link_libraries(test_pred PRIVATE vcomp_util vcomp_enc)
 add_executable(test_encode test_encode.cpp)
 target_link_libraries(test_encode PRIVATE vcomp_util vcomp_enc)
+add_executable(test_quant test_quant.c)
+target_link_libraries(test_quant PRIVATE vcomp_util vcomp_enc)
 
 # for targets without asan
 foreach(targ test_ent test_pred test_encode)
@@ -27,6 +29,7 @@ endforeach()
 #for targets with asan
 foreach(targ 
     test_ent2 test_pixbuf test_tx test_blockd test_mem test_search
+    test_quant
 )
     target_link_libraries(${targ} PRIVATE vcomp_flags_asan)
     if(ENABLE_ASAN)

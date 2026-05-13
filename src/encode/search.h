@@ -151,11 +151,12 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
 static inline int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                                  const c1enc_search_option_t *opt) {
     int r = 0;
-    if (opt->try_intra) {
-        r = c1enc_search_intra_b(b, pix, opt);
-    }
+    // search inter first to skip major overhead in intra search
     if (r >= 0 && opt->try_inter) {
         r = c1enc_search_inter_b(b, pix, ctx, opt);
+    }
+    if (opt->try_intra) {
+        r = c1enc_search_intra_b(b, pix, opt);
     }
     return r;
 }

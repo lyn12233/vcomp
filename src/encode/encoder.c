@@ -224,6 +224,7 @@ static int c1enc__part_unset_coef_bufs(c1enc_partition_t *p) {
             b->p[ci].qcoef = NULL;
             b->p[ci].dqcoef = NULL;
         }
+        b->has_tx_cand = 0;
     }
     return 0;
 }

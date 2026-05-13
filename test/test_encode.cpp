@@ -4,6 +4,7 @@
 #include "encode/types.h"
 #include "util/log.h"
 #include "util/pixbuf.h"
+#include "encode/quant.h"
 
 #include <assert.h>
 #include <cstdint>
@@ -47,7 +48,7 @@ int main() {
     c1enc_frame_t frm = {0};
     c1enc_ctx_t ctx = {0};
 
-    cv::Mat img = cv::imread("test/img/sreen_context_1.png");
+    cv::Mat img = cv::imread("test/img/screen_content_1.png");
     c1_pixbuf_t pix = c1_pixbuf_from_ptr(C1_PIXBUF_C3I8, (uint16_t)img.size[0], (uint16_t)img.size[1], img.data);
     c1_pixbuf_t pix_yuv = c1_pixbuf_cvt_rgbi8_to_yuv16(&pix);
     c1_pixbuf_clear(&pix);
@@ -89,6 +90,7 @@ int main() {
     c1_profile_repr(stdout, &search_prof, "search times", 0);
     cout << endl;
     c1_profile_repr(stdout, &c1pd_predict_prof, "predict times", 0);
+    cout << endl;
 
     c1_pixbuf_t dif_vis = c1_pixbuf_create(C1_PIXBUF_C3I16, frm.pix.h, frm.pix.w);
     c1enc_get_dif(&frm, &dif_vis);
@@ -100,7 +102,7 @@ int main() {
     }
     info_("sad: %llu", mat);
     // view_p16(&dif_vis);
-    view_p16(&frm.pix);
+    // view_p16(&frm.pix);
 
     mat = 0;
     for (int d = 0; d < hb && d < wb; d++) {
@@ -112,14 +114,53 @@ int main() {
         }
     }
 
-    view_p16(&frm.pix);
+    // view_p16(&frm.pix);
     for (int y = 0; y < pix_yuv.h; y++) {
         for (int x = 0; x < pix_yuv.w; x++) {
-            mat += c1_abs_i16(*c1_pixbuf_geti16c(&pix_yuv, y, x) - *c1_pixbuf_geti16c(&frm.pix, y, x));
+            assert_fatal(*c1_pixbuf_geti16c(&frm.pix, y, x) == *c1_pixbuf_geti16c(&pix_yuv, y, x));
         }
     }
-    info_("sad: %llu", mat);
 
+    c1tx_search_option_t tx_opt = {0};
+    tx_opt.size_depth = 1;
+    tx_opt.measure = C1TX_MEASURE_NOP;
+    tx_opt.tx_rng_max = TX2TYPE_DCT_DCT + 1;
+    uint64_t cnt0=clock();
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1tx_search_sb(frm.super_blocks + idx, tx_opt);
+        c1enc_sb_gather_qi(frm.super_blocks + idx, 75);
+        c1enc_sb_dealloc_coef_bufs(frm.super_blocks + idx);
+    }
+    c1enc_frame_gather_qi(&frm, 75);
+    info_("search time: %llu", clock()-cnt0);
+    c1_profile_repr(stdout,&c1tx_search_sb_prof,"min tx time",1);
+    cout<<endl;
+
+    for (int idx = 0; idx < hb * wb; idx++) {
+        cout<<(int)frm.super_blocks[idx].q_index_delta<<" ";
+    }
+    cout<<endl;
+
+    info_("frame qi: %u", frm.q_index);
+
+    c1_pixbuf_t dif1=c1_pixbuf_create(C1_PIXBUF_C3I16,frm.hgt,frm.wid);
+    c1enc_get_dif(&frm, &dif1);
+
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1enc_super_block_t*sb=frm.super_blocks+idx;
+        c1tx_search_sb(frm.super_blocks + idx, tx_opt);
+        c1enc_quantize_sb(sb);
+        c1enc_sb_dqc2c(sb);
+        c1tx_reconstruct(sb);// coef to dif
+    }
+    
+    c1_pixbuf_t dif2=c1_pixbuf_create(C1_PIXBUF_C3I16,frm.hgt,frm.wid);
+    c1enc_get_dif(&frm, &dif2);
+
+    view_p16(&dif1);
+    view_p16(&dif2);
+    
+    
     c1_pixbuf_clear(&pix_yuv);
     c1enc_frame_clear(&frm);
 }

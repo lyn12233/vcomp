@@ -1,15 +1,22 @@
 #include "quant.h"
+#include "types.h"
 #include "encoder.h"
 #include "math/transform.h"
 #include "tables.h"
 #include "types.h"
 #include "util/log.h"
+#include "util/mem.h"
 #include "util/pixbuf.h"
 
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+
+c1_profile_t c1tx_search_sb_prof = {0};
+#define C1TX_SEARCH_SB_ENTER() c1_profile_enter(&c1tx_search_sb_prof)
+#define C1TX_SEARCH_SB_EXIT() c1_profile_exit(&c1tx_search_sb_prof)
+#define C1TX_SEARCH_SB_STEP(step) c1_profile_step(&c1tx_search_sb_prof, step)
 
 uint8_t c1_lookup_q_inf_inited = 0;
 c1_quant_t c1_lookup_q_dc_inf[3][256];
@@ -72,6 +79,9 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
     const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
     const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
 
+    if (b->has_tx_cand && b->tx_inf.tx_size == tx_size && b->tx_inf.tx_type == tx_type)
+        return 0;
+
     memset(temp_out, 0, area * 3 * sizeof(int32_t)); // 3*bh*bw
 
     for (int ci = 0; ci < 3; ci++) {
@@ -97,12 +107,13 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
     int32_t cur_rate = c1tx__measure(b, (int32_t *[3]){temp_out, temp_out + area, temp_out + area * 2}, //
                                      opt, tx_size, c1tx__get_scan_id(tx_type));
     // update tx info and coef case first or better
-    if (!b->has_tx_cand || b->tx_stat.r < cur_rate) {
+    if (!b->has_tx_cand || b->tx_stat.r > cur_rate) {
         b->tx_inf = (c1enc_tx_inf_t){.tx_size = tx_size, .tx_type = tx_type};
         b->tx_stat = (c1enc_rdstat_t){.mask = C1_RD_RATE_BIT, .r = cur_rate};
         for (int ci = 0; ci < 3; ci++) {
             memcpy(b->p[ci].coef, temp_out + area * ci, area * sizeof(int32_t));
         }
+        b->has_tx_cand = 1;
     }
 
     return 0;
@@ -115,14 +126,10 @@ static int c1tx__search_b(c1enc_block_t *b, c1tx_search_option_t opt) {
     assert_fatal(temp);
 
     // traverse. courrently only considered squares
-    for (C1_2D_SZ tx_size = b->size; tx_size + opt.size_depth >= b->size;) {
+    for (C1_2D_SZ tx_size = C1_SZ_8_8; tx_size <= b->size && tx_size < C1_SZ_8_8 + opt.size_depth; tx_size++) {
         for (C1_TX_2D_TYPE tx_type = TX2TYPE_DCT_DCT; tx_type < opt.tx_rng_max; tx_type++) {
             c1tx__try_tx(b, (void *)temp + area * 3, temp, opt, tx_size, tx_type);
         }
-        if (tx_size == C1_SZ_8_8)
-            break;
-        else
-            tx_size--;
     }
     return 0;
 }
@@ -139,8 +146,11 @@ static int c1tx__search_p(c1enc_partition_t *p, c1tx_search_option_t opt) {
 }
 
 int c1tx_search_sb(c1enc_super_block_t *sb, c1tx_search_option_t opt) {
+    C1TX_SEARCH_SB_ENTER();
     c1enc_sb_require_coef_bufs(sb, 3);
+    C1TX_SEARCH_SB_STEP(1);
     c1tx__search_p(sb->root, opt);
+    C1TX_SEARCH_SB_EXIT();
     return 0;
 }
 
@@ -224,9 +234,9 @@ static void c1__invert_quant(uint16_t *quant, uint16_t *shift, uint32_t q) {
     while (tmp > 1)
         tmp >>= 1, l++;
     // (2) calc 16 bits mult which is 1.*2**(16) -> 0.*2**16, and avd 0
-    uint32_t m = (1 << (16 + l)) / q + 1; // 16+l: fraction bits + shift
-    *quant = (uint16_t)(m - (1 << 16));   // multiplier to remnant
-    *shift = (uint16_t)l;                 // left shift l
+    uint32_t m = (1 << (16 + l + 1)) / q + 1; // 16+l: fraction bits + shift
+    *quant = (uint16_t)(m - (1 << 16));       // multiplier to remnant
+    *shift = (uint16_t)l;                     // left shift l
 }
 
 void c1_lookup_init_q_inf() {
@@ -251,17 +261,56 @@ static uint16_t c1enc__est_q_v1(const int32_t *coef, int nbcoef_log2, uint8_t qp
         xx += coef[i] * coef[i];
     }
     int32_t mean = (int32_t)(x >> nbcoef_log2);
-    int32_t dev = (int32_t)sqrtf((float)(xx - x * x));
+    int32_t dev = ((int32_t)sqrtf((float)(xx - x * x))) >> nbcoef_log2;
     int16_t res = (int16_t)(mean - ((3 * dev * qp) >> 7));
     return res > 0 ? res : 1;
 }
 
+// min heap to underpin kth coef qstep estimator
+// clang-format off
+static void c1enc__est_heapswapi32(int32_t*a, int32_t*b){int32_t tmp=*a;*a=*b;*b=tmp;}
+static void c1enc__est_heapup(int32_t *h, int idx){
+    while(idx>0){
+        int pidx=(idx-1)>>1;
+        if(h[pidx]<=h[idx])break;
+        c1enc__est_heapswapi32(h+pidx, h+idx);
+        idx=pidx;
+    }
+}
+static void c1enc__est_heapdown(int32_t*h, int sz, int idx){
+    while(1){
+        int l=idx*2+1,r=idx*2+2, i=idx;
+        if(l<sz&&h[l]<h[i])i=l;
+        if(r<sz&&h[r]<h[i])i=r;
+        if(i==idx)break;
+        c1enc__est_heapswapi32(h+idx, h+i);
+        idx=i;
+    }
+}
+// clang-format on
+
 static uint16_t c1enc__est_q_v2(const int32_t *coef, int nbcoef_log2, uint8_t qp) {
     assert_fatal(qp <= 128);
     const int nbcoef = 1 << nbcoef_log2;
-    int eob = (nbcoef * qp) >> 7;
-    eob -= (eob > 0); // clamp to 0..nbcoef-1
-    return (uint16_t)c1_clamp32(c1_abs_i32(coef[eob]) * 2, 0, UINT16_MAX);
+    const int k = nbcoef / 16 * qp / 128;
+    if (k <= 0)
+        return UINT16_MAX;
+    int32_t *heap = c1_mpool_alloc_def(k * sizeof(int32_t));
+    int tot = 0;
+    for (int i = 0; i < nbcoef / 16; i++) {
+        int32_t v = c1_abs_i32(coef[i * 16 + i * 5 % 16]);
+        if (tot < k) {
+            heap[tot] = v;
+            c1enc__est_heapup(heap, tot);
+            tot++;
+        } else if (v > heap[0]) {
+            heap[0] = v;
+            c1enc__est_heapdown(heap, tot, 0);
+        }
+    }
+    uint16_t qstep = (uint16_t)c1_clamp32(heap[0], 0, UINT16_MAX);
+    c1_mpool_dealloc_def(k * sizeof(int32_t), heap);
+    return qstep;
 }
 
 static uint8_t c1enc__bisect_qi(const uint16_t lookup[256], uint16_t q, uint8_t qi_min, uint8_t qi_max) {
@@ -288,7 +337,17 @@ int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp) {
         c1enc_sb_gather_qi(frm->super_blocks + i, qp);
         tot_qi += frm->super_blocks[i].q_index;
     }
-    frm->q_index = (uint8_t)(tot_qi + nb / 2) / (nb);
+    frm->q_index = (uint8_t)((tot_qi + nb / 2) / (nb));
+    // gather qi again, dismiss large values
+    tot_qi = 0;
+    for (int i = 0; i < nb; i++) {
+        c1enc_sb_gather_qi(frm->super_blocks + i, qp);
+        uint8_t qi = frm->super_blocks[i].q_index;
+        if (c1_abs_dif_i16(qi, frm->q_index) < 16)
+            tot_qi += qi;
+    }
+    frm->q_index = (uint8_t)((tot_qi + nb / 2) / (nb));
+
     for (int i = 0; i < nb; i++) {
         c1enc_super_block_t *sb = frm->super_blocks + i;
         int16_t qdelta = c1_clamp16(sb->q_index - frm->q_index, INT8_MIN, INT8_MAX);
@@ -303,7 +362,7 @@ int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp) {
     sb->has_q_index = 1;
     assert_fatal(sb->coef_bufs);
     // todo: use a better strategy
-    uint16_t q = c1enc__est_q_v1(sb->coef_bufs + 0, 12, qp);
+    uint16_t q = c1enc__est_q_v2(sb->coef_bufs + 0, 12, qp);
     sb->q_index = c1enc__bisect_qi(c1_lookup_q_dc[0], q, 0, 255);
     return 0;
 }

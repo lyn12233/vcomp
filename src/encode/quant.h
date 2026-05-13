@@ -16,6 +16,7 @@ extern "C" {
 #endif
 
 #include "types.h"
+#include "util/log.h"
 #include "util/pixbuf.h"
 
 #include <stdint.h>
@@ -91,6 +92,11 @@ int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp);
 int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp);
 
 int c1enc_quantize_sb(c1enc_super_block_t *sb);
+
+// --- helper func ---
+
+extern c1_profile_t c1tx_search_sb_prof;
+extern c1_profile_t c1enc_quantize_sb_prof;
 
 #ifdef __cplusplus
 }
