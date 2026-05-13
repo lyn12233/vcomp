@@ -157,7 +157,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
         // init, create a mb tree
         assert_fatal((sb->root = c1_mpool_alloc(&c1enc_part_pool)));
         *sb->root = (c1enc_partition_t){0};
-        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, C1_SZ_16_16, 0, 0, sb_y, sb_x, 0);
+        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, C1_SZ_32_32, 0, 0, sb_y, sb_x, 0);
     } else {
         c1enc_partition_reset_cands(sb->root);
         // case init, cand cnt is 0, no need to reset
@@ -389,6 +389,7 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     b->has_tx_cand = 0;
     b->intra_cand_cnt = 0;
     b->inter_cand_cnt = 0;
+    b->cached_pred_stat_cnt = 0;
     b->pred_type_determined = 0;
 
     // assign buf in sb for planes

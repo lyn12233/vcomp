@@ -40,6 +40,7 @@ extern "C" {
     #define C1_ENC_REF_FRAME_CNT 16
     #define C1_ENC_INTRA_CAND_CNT 4
     #define C1_ENC_INTER_CAND_CNT 2
+    #define C1_ENC_CACHED_PRED_STAT_CNT 16
     #define C1_SIZE_CNT 4    // 8x8 ... 64x64
     #define C1_TX_TYPE_CNT 4 // dct-dct ...
 
@@ -132,10 +133,14 @@ typedef struct c1enc_mv_s c1enc_mv_t;
 */
 typedef struct {
     uint8_t mask;
-    uint32_t r, d;
-    float sse;
-    uint32_t sad;
-    float fitness;
+    union {
+        struct {
+            uint32_t r, d;
+        };
+        float sse;
+        uint32_t sad;
+        float fitness;
+    };
 } c1enc_rdstat_t;
 
 // --- encoder context ---
@@ -242,6 +247,14 @@ typedef struct {
     C1_2D_SZ tx_size;
     C1_TX_2D_TYPE tx_type;
 } c1enc_tx_inf_t;
+typedef struct {
+    // C1_2D_SZ size; unused. this is block size
+    C1_PRED_MODE mode;
+    uint8_t ci; // color idx: yuv
+    uint8_t use_cfl;
+    uint8_t has_cfl_alpha;
+    c1enc_mv_t mv;
+} c1pd_option_t;
 
 struct c1enc_block_s {
     C1_2D_SZ size;
@@ -262,10 +275,11 @@ struct c1enc_block_s {
     c1enc_tx_inf_t tx_inf;
     c1enc_rdstat_t tx_stat;
 
-    // predict mode search candidates
+    // predict mode search candidates and cached stats
 
     uint8_t intra_cand_cnt; // count in intra_cand
     uint8_t inter_cand_cnt; // count in inter_cand
+    uint8_t cached_pred_stat_cnt;
 
     uint8_t pred_type_determined; // init as 0
     C1_PRED_TYPE pred_type;       // only gathered by some func to avd redundant cand check
@@ -277,6 +291,8 @@ struct c1enc_block_s {
     c1enc_mi_inter_t inter_cands[C1_ENC_INTER_CAND_CNT + 1];
     c1enc_rdstat_t intra_cand_stats[C1_ENC_INTRA_CAND_CNT + 1];
     c1enc_rdstat_t inter_cand_stats[C1_ENC_INTER_CAND_CNT + 1];
+    c1pd_option_t cached_preds[C1_ENC_CACHED_PRED_STAT_CNT];
+    uint32_t cached_pred_stats[C1_ENC_CACHED_PRED_STAT_CNT];
 };
 typedef struct c1enc_block_s c1enc_block_t;
 

@@ -19,6 +19,9 @@ set(VCOMP_ENABLE_TESTS ON CACHE BOOL "build tests")
 set(VCOMP_ENABLE_LOGGING ON CACHE BOOL "print error messages using provided callback")
 set(VCOMP_ENABLE_ASAN ON CACHE BOOL "enable asan")
 set(VCOMP_ENABLE_PROFILE ON CACHE BOOL "enable profiler")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(VCOMP_ENABLE_ASAN OFF)
+endif()
 
 foreach(targ vcomp_flags vcomp_flags_asan)
     # 2. global incdir

@@ -33,15 +33,6 @@ extern c1pd_intra_func_t c1pd_dc_preds[2][2][C1_SIZE_CNT];
 extern c1pd_intra_func_t c1pd_intra_recons[C1_PD_INTRA_CNT - 1][C1_SIZE_CNT];
 extern c1pd_intra_func_t c1pd_dc_recons[2][2][C1_SIZE_CNT];
 
-typedef struct {
-    // C1_2D_SZ size; unused. this is block size
-    C1_PRED_MODE mode;
-    uint8_t ci; // color idx: yuv
-    uint8_t use_cfl;
-    uint8_t has_cfl_alpha;
-    c1enc_mv_t mv;
-} c1pd_option_t;
-
 // some utils to init pred option?
 // todo re-do things below
 /** perform either intra or inter prediction based on option struct.
@@ -69,6 +60,8 @@ int c1pd_reconstruct(c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ct
 int c1pd_reconstruct_sb(c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
 
 // --- helper func ---
+
+int c1pd_opt_eq(const c1pd_option_t *a, const c1pd_option_t *b);
 
 static const char *c1pd_mode2str(C1_PRED_MODE mode) {
     switch (mode) {

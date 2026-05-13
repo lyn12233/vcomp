@@ -85,7 +85,8 @@ static void c1enc__calc_p_pred2dif(const c1enc_block_t *b, const c1_pixbuf_t *pi
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++) {
-            b->p[opt->ci].diff[i * bw + j] -= *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j);
+            int16_t *diff = &b->p[opt->ci].diff[i * bw + j];
+            *diff = *c1_pixbuf_geti16c(&ci_pix, by + i, bx + j) - *diff;
         }
     }
     c1_pixbuf_clear(&ci_pix);
@@ -175,14 +176,18 @@ int c1enc_rdstat_cmp(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b) {
 
 c1enc_rdstat_t c1enc_rdstat_merge(const c1enc_rdstat_t *a, const c1enc_rdstat_t *b) {
     uint8_t mask = a->mask & b->mask;
-    return (c1enc_rdstat_t){
-        mask,
-        (mask & C1_RD_RATE_BIT) ? a->r + b->r : 0,
-        (mask & C1_RD_DIS_BIT) ? a->d + b->d : 0,
-        (mask & C1_RD_SSE_BIT) ? a->sse + b->sse : 0,
-        (mask & C1_RD_SAD_BIT) ? (uint32_t)c1_clamp64(a->sad + b->sad, INT32_MIN, INT32_MAX) : 0,
-        (mask & C1_RD_FIT_BIT) ? a->fitness + b->fitness : 0,
-    };
+    c1enc_rdstat_t res = {.mask = mask};
+    if (mask & C1_RD_RATE_BIT)
+        res.r = a->r + b->r;
+    if (mask & C1_RD_DIS_BIT)
+        res.d = a->d + b->d;
+    if (mask & C1_RD_SSE_BIT)
+        res.sse = a->sse + b->sse;
+    if (mask & C1_RD_SAD_BIT)
+        res.sad = a->sad + b->sad;
+    if (mask & C1_RD_FIT_BIT)
+        res.fitness = a->fitness + b->fitness;
+    return res;
 }
 
 int c1enc_mi_intra_eq(const c1enc_mi_intra_t *a, const c1enc_mi_intra_t *b) {
@@ -215,6 +220,35 @@ int c1enc_block_has_inter_cand(const c1enc_block_t *b, const c1enc_mi_inter_t *m
             return 1;
     }
     return 0;
+}
+int c1enc__block_cached_pred_idx(const c1enc_block_t *b, const c1pd_option_t *opt) {
+    for (int i = 0; i < C1_ENC_CACHED_PRED_STAT_CNT && i < b->cached_pred_stat_cnt; i++) {
+        if (c1pd_opt_eq(b->cached_preds + i, opt))
+            return i;
+    }
+    return -1;
+}
+int c1enc__block_cache_pred(c1enc_block_t *b, const c1pd_option_t *opt, uint32_t stat) {
+    if (c1enc__block_cached_pred_idx(b, opt) >= 0)
+        return 0;
+    if (b->cached_pred_stat_cnt >= C1_ENC_CACHED_PRED_STAT_CNT)
+        return 0;
+    b->cached_preds[b->cached_pred_stat_cnt] = *opt;
+    b->cached_pred_stats[b->cached_pred_stat_cnt] = stat;
+    b->cached_pred_stat_cnt++;
+    return 0;
+}
+uint32_t c1enc__cached_pred_sad(c1enc_block_t *b, const c1pd_option_t *opt, const c1_pixbuf_t *pix, int8_t *cfl) {
+    int idx = c1enc__block_cached_pred_idx(b, opt);
+    uint32_t res;
+    if (idx < 0) {
+        c1pd_predict(b, b->p[opt->ci].diff, pix, opt, cfl);
+        res = c1enc__calc_p_sad(b, pix, opt);
+        c1enc__block_cache_pred(b, opt, res);
+    } else {
+        res = b->cached_pred_stats[idx];
+    }
+    return res;
 }
 
 int c1enc_block_add_intra_cand(c1enc_block_t *b, const c1enc_mi_intra_t *mi, const c1enc_rdstat_t *stat) {
@@ -337,119 +371,108 @@ int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const 
 
 // --- pred mode search ---
 
+static uint32_t c1enc__intra_not_adj_modes[C1_PRED_PAETH + 1 - C1_PRED_DC] = {
+    0,                                                                             // dc
+    0,                                                                             // h
+    0,                                                                             // v
+    1 << C1_PRED_D135 | 1 << C1_PRED_D113 | 1 << C1_PRED_D157,                     // d45
+    1 << C1_PRED_D45 | 1 << C1_PRED_D67 | 1 << C1_PRED_D203,                       // 135
+    1 << C1_PRED_D135 | 1 << C1_PRED_D113 | 1 << C1_PRED_D157 | 1 << C1_PRED_D203, // d67
+    1 << C1_PRED_D45 | 1 << C1_PRED_D67 | 1 << C1_PRED_D157 | 1 << C1_PRED_D203,   // d113
+    1 << C1_PRED_D45 | 1 << C1_PRED_D67 | 1 << C1_PRED_D113,                       // d157
+    1 << C1_PRED_D67 | 1 << C1_PRED_D135 | 1 << C1_PRED_D113,                      // d203
+};
+
 int c1enc_search_intra_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_search_option_t *opt) {
+    static const int sad_sig[3] = {0, 1, 1};
+
     // dir mode in z1/z3 trimmed for the edges may not be avail for recon/decode
-    uint32_t mode_skip_mask = 0;
+    // set to 1 means skip
+    uint32_t mode_skip_mask = 0, mode_adj_mask = 0;
     if (b->yoff > 0) {
-        mode_skip_mask &= ~(1 << C1_PRED_D45) & ~(1 << C1_PRED_D67);
+        mode_skip_mask |= (1 << C1_PRED_D45) | (1 << C1_PRED_D67);
     }
     if (b->xoff > 0) {
-        mode_skip_mask &= ~(1 << C1_PRED_D203);
+        mode_skip_mask |= (1 << C1_PRED_D203);
     }
 
-    if (opt->intra_try_cfl || !opt->intra_try_uv) {
-        // only 1 mode dimension is searched
-        c1pd_option_t pred_opt = {0};
-        pred_opt.use_cfl = 0; // no cfl first
-        c1enc_mi_intra_t mi;
-        mi.use_cfl = 0;
+    // (1) default search
+    // // only 1 mode dimension is searched
+    c1pd_option_t pred_opt = {0};
+    pred_opt.use_cfl = 0; // no cfl first
+    c1enc_mi_intra_t mi;
+    mi.use_cfl = 0;
+
+    for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
+        if ((mode_skip_mask | mode_adj_mask) & (1 << mode))
+            continue;
+        pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
+        c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
+        if (opt->intra_only_y) {
+            pred_opt.ci = 0;
+            stat.sad = c1enc__cached_pred_sad(b, &pred_opt, pix, NULL) * 2;
+        } else {
+            for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.ci = ci;
+                int idx = c1enc__block_cached_pred_idx(b, &pred_opt);
+                stat.sad += c1enc__cached_pred_sad(b, &pred_opt, pix, NULL) >> sad_sig[ci];
+            }
+        }
+        c1enc_block_add_intra_cand(b, &mi, &stat);
+
+        // update mode skip mask according to the best mode
+        if (b->intra_cand_cnt > 0)
+            mode_adj_mask = c1enc__intra_not_adj_modes[b->intra_cands[0].mode_y - C1_PRED_DC];
+        (void)0;
+
+    } // mode search loop
+
+    // (2) then search cfl
+    if (opt->intra_try_cfl) {
+
+        pred_opt.use_cfl = mi.use_cfl = 1;
 
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
             if (mode_skip_mask & (1 << mode))
                 continue;
-            pred_opt.mode = mi.mode_y = mi.mode_uv = mode;
+            pred_opt.mode = mi.mode_y = mode;
             c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
-            if (opt->intra_only_y) {
-                pred_opt.ci = 0;
-                c1pd_predict(b, b->p[0].diff, pix, &pred_opt, NULL);
-                stat.sad = c1enc__calc_p_sad(b, pix, &pred_opt) * 3;
-            } else {
-                for (uint8_t ci = 0; ci < 3; ci++) {
-                    pred_opt.ci = ci;
-                    c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
-                    stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
-                }
+            int8_t *const cfl_outputs[3] = {NULL, &mi.cfl_alpha_u, &mi.cfl_alpha_v};
+            for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.ci = ci;
+                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_outputs[ci]);
+                stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt) >> sad_sig[ci];
+                // todo: at recon, this refers to undefined pixels.
+                // have no time to fix
             }
             c1enc_block_add_intra_cand(b, &mi, &stat);
         } // mode search loop
 
-        // then search cfl
-        if (opt->intra_try_cfl) {
+        pred_opt.use_cfl = mi.use_cfl = 0;
+    }
 
-            pred_opt.use_cfl = mi.use_cfl = 1;
-
-            for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
-                if (mode_skip_mask & (1 << mode))
-                    continue;
-                pred_opt.mode = mi.mode_y = mode;
-                c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
-                int8_t *const cfl_outputs[3] = {NULL, &mi.cfl_alpha_u, &mi.cfl_alpha_v};
-                for (uint8_t ci = 0; ci < 3; ci++) {
-                    pred_opt.ci = ci;
-                    c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, cfl_outputs[ci]);
-                    stat.sad += c1enc__calc_p_sad(b, pix, &pred_opt);
-                    // todo: at recon, this refers to undefined pixels.
-                }
-                c1enc_block_add_intra_cand(b, &mi, &stat);
-            } // mode search loop
-        }
-    } else {
-        // no cfl and try different uv: search best modes for y and uv, then search in the combinations
-        C1_PRED_MODE best_ymode[C1__UVMODE_SING_SRCH_CNT + 1], best_uvmode[C1__UVMODE_SING_SRCH_CNT + 1];
-        int best_ysad[C1__UVMODE_SING_SRCH_CNT + 1], best_uvsad[C1__UVMODE_SING_SRCH_CNT + 1];
-        int best_cnt = 0;
-        for (int i = 0; i < C1__UVMODE_SING_SRCH_CNT; i++) {
-            best_ysad[i] = best_uvsad[i] = INT32_MAX;
-        }
-
-        c1pd_option_t pred_opt = {0};
-        pred_opt.use_cfl = 0;
-        c1enc_mi_intra_t mi;
-        mi.use_cfl = 0;
+    // (3) search different uv mode
+    if (opt->intra_try_uv && !pred_opt.use_cfl) {
+        assert_fatal(b->intra_cand_cnt > 0);
+        const C1_PRED_MODE mode_y = b->intra_cands[0].mode_y;
+        mi.mode_y = mode_y;
 
         for (C1_PRED_MODE mode = C1_PRED_DC; mode < opt->intra_rng_max; mode++) {
-            if (mode_skip_mask & (1 << mode))
+            if ((mode_skip_mask | mode_adj_mask) & (1 << mode))
                 continue;
-            pred_opt.mode = mode; // not setting mi
-            int ysad = 0, uvsad = 0;
-            int *const sad_targ[3] = {&ysad, &uvsad, &uvsad};
+            c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
+            const C1_PRED_MODE modes[3] = {mode_y, mode, mode};
+            mi.mode_uv = mode;
             for (uint8_t ci = 0; ci < 3; ci++) {
+                pred_opt.mode = modes[ci];
                 pred_opt.ci = ci;
-                c1pd_predict(b, b->p[ci].diff, pix, &pred_opt, NULL);
-                *(sad_targ[ci]) += c1enc__calc_p_sad(b, pix, &pred_opt);
+                stat.sad += c1enc__cached_pred_sad(b, &pred_opt, pix, NULL) >> sad_sig[ci];
             }
+            c1enc_block_add_intra_cand(b, &mi, &stat);
+        }
 
-            // add single mode cand and bubble-sort
-            best_ymode[best_cnt] = best_uvmode[best_cnt] = mode;
-            best_ysad[best_cnt] = ysad, best_uvsad[best_cnt] = uvsad;
-            for (int i = best_cnt; i >= 1; i--) {
-                // new cand is at index i
-                if (ysad < best_ysad[i - 1]) {
-                    best_ysad[i] = best_ysad[i - 1], best_ymode[i] = best_ymode[i - 1];
-                    best_ysad[i - 1] = ysad, best_ymode[i - 1] = mode;
-                } else
-                    break;
-            }
-            for (int i = best_cnt; i >= 1; i--) {
-                if (uvsad < best_uvsad[i - 1]) {
-                    best_uvsad[i] = best_uvsad[i - 1], best_uvmode[i] = best_uvmode[i - 1];
-                    best_uvsad[i - 1] = uvsad, best_uvmode[i - 1] = mode;
-                } else
-                    break;
-            }
-            best_cnt = best_cnt < C1__UVMODE_SING_SRCH_CNT ? best_cnt + 1 : C1__UVMODE_SING_SRCH_CNT;
-        } // sing mode search loop
-
-        // traverse part of mode combinations
-        for (int yidx = 0; yidx < C1__UVMODE_SING_SRCH_CNT; yidx++) {
-            for (int uvidx = 0; uvidx + yidx < C1__UVMODE_SING_SRCH_CNT; uvidx++) {
-                mi.mode_y = best_ymode[yidx], mi.mode_uv = best_uvmode[uvidx];
-                c1enc_rdstat_t stat = {.mask = C1_RD_SAD_BIT};
-                stat.sad = best_ysad[yidx] + best_uvsad[uvidx];
-                c1enc_block_add_intra_cand(b, &mi, &stat);
-            }
-        } // y+uv mode search loop
     } // try different uv mode
+
     return 0;
 }
 /** search inter mode per block per step in a diamond search pattern
@@ -856,7 +879,7 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
     C1ENC_SEARCH_SB_STEP(2);
     // make SAD threshold adaptive. (4*4) is averaging 64x64->16x16 currently
     limited_opt.thre_sad_max_b = c1enc__search_decide_sad_max( //
-        sb->root->stats.sad / (4 * 4), limited_opt.thre_sad_max_b);
+        sb->root->stats.sad / (2 * 2), limited_opt.thre_sad_max_b);
 
     // C1ENC_SEARCH_SB_STEP(3);
     c1enc_search_merge(sb->root, pix, ctx, &limited_opt);

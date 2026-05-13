@@ -542,7 +542,7 @@ int c1pd_reconstruct(c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ct
 
         for (int ci = 0; ci < 3; ci++) {
             opts[ci].use_cfl = mi->use_cfl;
-            opts[ci].has_cfl_alpha = 0;
+            opts[ci].has_cfl_alpha = 1;
         }
         if (mi->use_cfl) {
             cfl_alphas[1] = mi->cfl_alpha_u;
@@ -576,7 +576,7 @@ int c1pd_reconstruct(c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ct
         c1pd_predict(b, pred_output, ref_pix, opts + ci, cfl_alphas + ci);
         for (int i = 0; i < bh; i++) {
             for (int j = 0; j < bw; j++) {
-                *c1_pixbuf_geti16(&frm->pix, by + i, bx + j) = pred_output[i * bw + j] + b->p[ci].diff[i * bw + j];
+                c1_pixbuf_geti16(&frm->pix, by + i, bx + j)[ci] = pred_output[i * bw + j] + b->p[ci].diff[i * bw + j];
             }
         }
     }
@@ -600,4 +600,14 @@ static int c1pd__reconstruct_p(const c1enc_partition_t *p, c1enc_frame_t *frm, c
 
 int c1pd_reconstruct_sb(c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx) {
     return c1pd__reconstruct_p(sb->root, frm, ctx);
+}
+
+int c1pd_opt_eq(const c1pd_option_t *a, const c1pd_option_t *b) {
+    if (a->mode != b->mode || a->ci != b->ci)
+        return 0;
+    if (c1_pred_is_inter(a->mode)) {
+        return a->use_cfl == b->use_cfl;
+    } else {
+        return a->mv.x == b->mv.x && a->mv.y == b->mv.y;
+    }
 }

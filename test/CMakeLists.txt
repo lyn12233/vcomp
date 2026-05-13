@@ -29,9 +29,11 @@ foreach(targ
     test_ent2 test_pixbuf test_tx test_blockd test_mem test_search
 )
     target_link_libraries(${targ} PRIVATE vcomp_flags_asan)
-    add_custom_command(TARGET ${targ} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASAN_DLL}" "${CMAKE_CURRENT_BINARY_DIR}"
-    )
+    if(ENABLE_ASAN)
+        add_custom_command(TARGET ${targ} PRE_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ASAN_DLL}" "${CMAKE_CURRENT_BINARY_DIR}"
+        )
+    endif()
 endforeach()
     
 # for targets with gtest
