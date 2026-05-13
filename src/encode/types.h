@@ -220,6 +220,9 @@ struct c1enc_plane_s {
     int32_t *coef;   // coef is the tx result. represents best tx, used for qi refinement
     int32_t *qcoef;  // quantized coef. used for both encoding(eob calc) and reconstruction
     int32_t *dqcoef; // dequantized coef. used for reconstruction.
+    // border cache owned by each plane. allocated by malloc, size bh+bw
+    int16_t *border_above; // above border cache
+    int16_t *border_left;  // left border cache
 };
 typedef struct c1enc_plane_s c1enc_plane_t;
 

@@ -376,9 +376,8 @@ void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
 int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size, //
                        uint8_t y, uint8_t x, uint16_t sb_y, uint16_t sb_x,       //
                        uint32_t buf_offs) {
-    if (b->size != size) {
-        c1enc_block_clear(b);
-    }
+    // not many owned instances, thus always clear first
+    c1enc_block_clear(b);
 
     // reset volatile attrs
 
@@ -402,7 +401,17 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     return 0;
 }
 int c1enc_block_clear(c1enc_block_t *b) {
-    // currently no resources is owned by block
+    // dealloc resources is owned by block
+    for (int ci = 0; ci < 3; ci++) {
+        if (b->p[ci].border_above) {
+            free(b->p[ci].border_above);
+            b->p[ci].border_above = NULL;
+        }
+        if (b->p[ci].border_left) {
+            free(b->p[ci].border_left);
+            b->p[ci].border_left = NULL;
+        }
+    }
     *b = (c1enc_block_t){0};
     return 0;
 }

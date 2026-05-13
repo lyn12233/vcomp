@@ -7,8 +7,6 @@
 extern "C" {
     #endif
 
-    #include "types.h"
-
     #include "encoder.h"
     #include "types.h"
     #include "util/log.h"

@@ -55,7 +55,7 @@ typedef struct {
  @param[out] cfl_alpha for option if ci>0 and use_cfl, mode is neglected and this pointer is required ozrwis unused.
  cfl_alpha is represented in int8_t range (-16/64,16/64)
 */
-int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
+int c1pd_predict(c1enc_block_t *b, int16_t *output, //
                  const c1_pixbuf_t *pix, const c1pd_option_t *opt, int8_t *cfl);
 
 /** perform prediction reconstruction for block.
@@ -65,8 +65,8 @@ int c1pd_predict(const c1enc_block_t *b, int16_t *output, //
  @param[in,out] frm recons frame, its pix is to be referred and reconstructed.
  @param[in] ctx context, to determine ref frame.
 */
-int c1pd_reconstruct(const c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
-int c1pd_reconstruct_sb(const c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
+int c1pd_reconstruct(c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
+int c1pd_reconstruct_sb(c1enc_super_block_t *sb, c1enc_frame_t *frm, const c1enc_ctx_t *ctx);
 
 // --- helper func ---
 

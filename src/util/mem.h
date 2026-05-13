@@ -6,9 +6,11 @@
 extern "C" {
 #endif
 
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 
 // memory pool
 struct c1_mpool_s {
@@ -27,15 +29,18 @@ int c1_mpool_dbgcnt(const c1_mpool_t *p);
 
 // default mpools with size 1, .., 256 (bytes)
 extern c1_mpool_t c1_mpool_defs[9];
-// fast default alloc, suppose size is 2**n and within range, no checking,
-// but bigger 2**n downgrades to malloc.
+static uint32_t c1_mpool_ceil_log2(uint32_t size) {
+    uint32_t i = 0, tmp = size;
+    while (tmp >>= 1)
+        i++;
+    assert(i + (size > (1 << i)) <= 8);
+    return i + (size > (1 << i));
+}
+// fast default alloc, round up to 2**n. bigger 2**n downgrades to malloc.
 static void *c1_mpool_alloc_def(uint32_t size) {
     if (size > 256)
         return malloc(size);
-    int i = 0;
-    while (size >>= 1)
-        i++;
-    return c1_mpool_alloc(c1_mpool_defs + i);
+    return c1_mpool_alloc(c1_mpool_defs + c1_mpool_ceil_log2(size));
 }
 // fast default dealloc.
 static int c1_mpool_dealloc_def(uint32_t size, void *buf) {
@@ -43,10 +48,7 @@ static int c1_mpool_dealloc_def(uint32_t size, void *buf) {
         free(buf);
         return 0;
     }
-    int i = 0;
-    while (size >>= 1)
-        i++;
-    return c1_mpool_dealloc(c1_mpool_defs + i, buf);
+    return c1_mpool_dealloc(c1_mpool_defs + c1_mpool_ceil_log2(size), buf);
 }
 
 // shared_ptr
