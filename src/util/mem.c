@@ -184,7 +184,7 @@ void c1_dump_buf(void *buf, uint32_t sz) {
 }
 
 void c1_dump_buf_f(FILE *fp, void *data, uint32_t len) {
-    info_("\033[38;5;10mbuffer[%u]:\033[0m\r\n", len);
+    info_("buffer[%u]:\r\n", len);
     const uint8_t *p = data;
     for (size_t i = 0; i < len; i += 16) {
         fprintf(fp, "%.4u:", (int)i);

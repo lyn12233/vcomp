@@ -41,7 +41,7 @@ struct c1_pixbuf_s {
 };
 typedef struct c1_pixbuf_s c1_pixbuf_t;
 
-// --- ctor and slicing ---
+// --- ctor, converter and slicing ---
 
 c1_pixbuf_t c1_pixbuf_create(C1_PIXBUF_TYPE type, uint16_t h, uint16_t w);
 c1_pixbuf_t c1_pixbuf_from_ptr(C1_PIXBUF_TYPE type, uint16_t h, uint16_t w, const void *p);
@@ -75,6 +75,8 @@ static int16_t *c1_pixbuf_geti16(c1_pixbuf_t *pix, int h, int w) {
 static const int16_t *c1_pixbuf_geti16c(const c1_pixbuf_t *pix, int h, int w) {
     return (const int16_t *)c1_pixbuf_getc(pix, h, w);
 }
+
+// --- manipulation ---
 
 // --- dtor ---
 // clear is simply decref

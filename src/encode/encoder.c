@@ -66,7 +66,6 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->super_blocks = malloc(sizeof(c1enc_super_block_t) * hb * wb);
         assert_fatal(frm->super_blocks);
         memset(frm->super_blocks, 0, sizeof(c1enc_super_block_t) * hb * wb);
-        assert_fatal(frm->super_blocks);
 
         // 3. clear pix
         if (frm->pix.buf) {
@@ -157,7 +156,7 @@ int c1enc_sb_update(c1enc_super_block_t *sb, const c1enc_frame_t *frm, uint16_t 
         // init, create a mb tree
         assert_fatal((sb->root = c1_mpool_alloc(&c1enc_part_pool)));
         *sb->root = (c1enc_partition_t){0};
-        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, C1_SZ_32_32, 0, 0, sb_y, sb_x, 0);
+        c1enc_partition_init(sb->root, sb, C1_SZ_64_64, C1_SZ_64_64, 0, 0, sb_y, sb_x, 0);
     } else {
         c1enc_partition_reset_cands(sb->root);
         // case init, cand cnt is 0, no need to reset
@@ -186,7 +185,7 @@ int c1enc_sb_validate(const c1enc_super_block_t *sb) {
 }
 void c1enc_sb_repr(FILE *f, const c1enc_super_block_t *sb, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "\"SuperBlock [qidelta=%d]\"\r\n", sb->q_index_delta);
+    fprintf(f, "\"SuperBlock [qidelta=%d,buf=[dif=%p,coef=%p]]\"\r\n", sb->q_index_delta, sb->diff_buf, sb->coef_bufs);
     if (sb->root) {
         c1enc_partition_repr(f, sb->root, ind);
     } else {
@@ -208,6 +207,8 @@ static int c1enc__part_set_coef_bufs(c1enc_partition_t *p, //
             b->p[ci].coef = coef_bufs ? coef_bufs + p->buf_offs + h * w * ci : NULL;
             b->p[ci].qcoef = qcoef_bufs ? qcoef_bufs + p->buf_offs + h * w * ci : NULL;
             b->p[ci].dqcoef = dqcoef_bufs ? dqcoef_bufs + p->buf_offs + h * w * ci : NULL;
+            // to test coef corruption
+            // b->p[ci].coef=malloc(h*w*sizeof(uint32_t));
         }
     }
     return 0;
@@ -360,7 +361,9 @@ int c1enc_partition_validate(const c1enc_partition_t *part) {
 }
 void c1enc_partition_repr(FILE *f, const c1enc_partition_t *p, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Partition [%dx%d, %s] (\r\n", c1_sz2wid(p->size), c1_sz2wid(p->size), p->is_partition ? "mid" : "end");
+    fprintf(f, "Partition [%dx%d%s, buf_offs=%u] (\r\n",                              //
+            c1_sz2wid(p->size), c1_sz2wid(p->size), p->is_partition ? ", ispar" : "", //
+            p->buf_offs);
     if (p->is_partition) {
         for (int i = 0; i < 4; i++) {
             c1enc_partition_repr(f, p->parts[i], ind + 4);
@@ -422,7 +425,9 @@ int c1enc_block_validate(c1enc_block_t *b) {
 }
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
     c1__print_ind(f, ind);
-    fprintf(f, "Block [%dx%d, (+%d,+%d)] ", c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff);
+    fprintf(f, "Block [%dx%d, (+%d,+%d), buf=[dif0=%p,dif1=%p,dif2=%p,coef0=%p,coef1=%p, coef2=%p]] ", //
+            c1_sz2wid(b->size), c1_sz2wid(b->size), b->yoff, b->xoff,                                  //
+            b->p[0].diff, b->p[1].diff, b->p[2].diff, b->p[0].coef, b->p[1].coef, b->p[2].coef);
     if (b->pred_type_determined) {
         fprintf(f, "[best_pred=%s] ", b->pred_type == C1_PRED_INTRA ? "intra" : "inter");
     }

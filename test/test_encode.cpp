@@ -1,10 +1,10 @@
 #include "encode/encoder.h"
 #include "encode/predictor.h"
+#include "encode/quant.h"
 #include "encode/search.h"
 #include "encode/types.h"
 #include "util/log.h"
 #include "util/pixbuf.h"
-#include "encode/quant.h"
 
 #include <assert.h>
 #include <cstdint>
@@ -17,14 +17,15 @@
 #include <opencv2/core/types_c.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
+#include <stdio.h>
 
 using std::cout;
 using std::endl;
 
 c1_profile_t search_prof = {0};
 
-static void view_p16(const c1_pixbuf_t *pix) {
-    for (int ci = 0; ci < 3; ci++) {
+static void view_p16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
+    for (int ci = 0; ci < chnls; ci++) {
         cout << "channel " << ci << ":" << endl;
         c1_pixbuf_t c = c1_pixbuf_fromchnl(pix, ci);
         c1_pixbuf_repr(stdout, &c);
@@ -33,10 +34,11 @@ static void view_p16(const c1_pixbuf_t *pix) {
         cv::Mat tmp(pix->h, pix->w, CV_8UC1);
         for (int y = 0; y < pix->h; y++) {
             for (int x = 0; x < pix->w; x++) {
-                tmp.data[y * pix->w + x] = (uint8_t)c1_clamp16(c1_abs_i16(*c1_pixbuf_geti16c(pix, y, x)), 0, 255);
+                tmp.data[y * pix->w + x] = (uint8_t)c1_clamp16(c1_abs_i16(*c1_pixbuf_geti16c(&c, y, x)), 0, 255);
                 //
             }
         }
+        // cv::resize(tmp, tmp, {(int)((float)tmp.size[0] * scale), (int)((float)tmp.size[1] * scale)});
         cv::imshow("", tmp);
         cv::waitKey();
         c1_pixbuf_clear(&c);
@@ -125,42 +127,102 @@ int main() {
     tx_opt.size_depth = 1;
     tx_opt.measure = C1TX_MEASURE_NOP;
     tx_opt.tx_rng_max = TX2TYPE_DCT_DCT + 1;
-    uint64_t cnt0=clock();
-    for (int idx = 0; idx < hb * wb; idx++) {
-        c1tx_search_sb(frm.super_blocks + idx, tx_opt);
-        c1enc_sb_gather_qi(frm.super_blocks + idx, 75);
-        c1enc_sb_dealloc_coef_bufs(frm.super_blocks + idx);
-    }
-    c1enc_frame_gather_qi(&frm, 75);
-    info_("search time: %llu", clock()-cnt0);
-    c1_profile_repr(stdout,&c1tx_search_sb_prof,"min tx time",1);
-    cout<<endl;
+    // uint64_t cnt0 = clock();
+    // for (int idx = 0; idx < hb * wb; idx++) {
+    //     c1tx_search_sb(frm.super_blocks + idx, tx_opt);
+    //     c1enc_sb_gather_qi(frm.super_blocks + idx, 75);
+    //     c1enc_sb_dealloc_coef_bufs(frm.super_blocks + idx);
+    // }
+    // c1enc_frame_gather_qi(&frm, 75);
+    // info_("search time: %llu", clock() - cnt0);
+    // c1_profile_repr(stdout, &c1tx_search_sb_prof, "min tx time", 1);
+    // cout << endl;
 
-    for (int idx = 0; idx < hb * wb; idx++) {
-        cout<<(int)frm.super_blocks[idx].q_index_delta<<" ";
-    }
-    cout<<endl;
+    // for (int idx = 0; idx < hb * wb; idx++) {
+    //     cout << (int)frm.super_blocks[idx].q_index_delta << " ";
+    // }
+    // cout << endl;
+    // info_("frame qi: %u", frm.q_index);
 
-    info_("frame qi: %u", frm.q_index);
+    c1_pixbuf_t dif1 = c1_pixbuf_create(C1_PIXBUF_C3I16, frm.hgt, frm.wid);
+    c1_pixbuf_t dif2 = c1_pixbuf_create(C1_PIXBUF_C3I16, frm.hgt, frm.wid);
+    // c1_pixbuf_t dif1 = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
+    // c1_pixbuf_t dif2 = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
+    c1_pixbuf_t coef = c1_pixbuf_create(C1_PIXBUF_C3I16, 64, 64);
 
-    c1_pixbuf_t dif1=c1_pixbuf_create(C1_PIXBUF_C3I16,frm.hgt,frm.wid);
     c1enc_get_dif(&frm, &dif1);
 
     for (int idx = 0; idx < hb * wb; idx++) {
-        c1enc_super_block_t*sb=frm.super_blocks+idx;
-        c1tx_search_sb(frm.super_blocks + idx, tx_opt);
-        c1enc_quantize_sb(sb);
-        c1enc_sb_dqc2c(sb);
-        c1tx_reconstruct(sb);// coef to dif
+        c1enc_super_block_t *sb = frm.super_blocks + idx;
+        // c1enc_get_dif_sb(sb, &dif1);
+        c1tx_search_sb(sb, tx_opt);
+        c1tx_reconstruct(sb); // coef to dif
+        // c1enc_get_dif_sb(sb, &dif2);
+        // c1enc_get_coef_sb(sb, &coef);
+        // exit(0);
+        // view_p16(&dif1, 4, 1);
+        // view_p16(&dif2, 4, 1);
+        // c1enc_sb_repr(stdout, sb, 0);
     }
-    
-    c1_pixbuf_t dif2=c1_pixbuf_create(C1_PIXBUF_C3I16,frm.hgt,frm.wid);
+
     c1enc_get_dif(&frm, &dif2);
 
-    view_p16(&dif1);
-    view_p16(&dif2);
+    for (int y = 0; y < dif1.h; y++) {
+        for (int x = 0; x < dif1.w; x++) {
+            int16_t a = *c1_pixbuf_geti16(&dif1, y, x); // default y plane
+            int16_t b = *c1_pixbuf_geti16(&dif2, y, x);
+            assert_fatal_ex(c1_abs_dif_i16(a, b) < 2, "great diff at pixel (%u,%u): %d vs %d", y, x, a, b);
+        }
+    }
+    // tx+tx inv looks good, problems seems in quant and dequant.
+
+    c1enc_get_dif(&frm, &dif1);
+    for (int idx = 0; idx < hb * wb; idx++) {
+        c1enc_super_block_t *sb = frm.super_blocks + idx;
+        // c1enc_get_dif_sb(sb, &dif1);
+        c1tx_search_sb(sb, tx_opt);
+        c1enc_sb_gather_qi(sb, 75);
+        info_("qi: %u", sb->q_index);
+        c1enc_quantize_sb(sb);
+        c1enc_sb_dqc2c(sb);
+        c1tx_reconstruct(sb); // coef to dif
+        c1enc_sb_dealloc_coef_bufs(sb);
+    }
+    c1enc_get_dif(&frm, &dif2);
     
+    uint32_t sum_dif=0;
+    for (int y = 0; y < dif1.h; y++) {
+        for (int x = 0; x < dif1.w; x++) {
+            int16_t a = *c1_pixbuf_geti16(&dif1, y, x); // default y plane
+            int16_t b = *c1_pixbuf_geti16(&dif2, y, x);
+            sum_dif+=c1_abs_dif_i16(a, b);
+        }
+    }
+    info_("residual distortion: %u", sum_dif);
+
+    for (int d = 0; d < hb && d < wb; d++) {
+        for (int i = d; i < hb; i++) {
+            c1pd_reconstruct_sb(frm.super_blocks + i * wb + d, &frm, &ctx);
+        }
+        for (int j = d; j < wb; j++) {
+            c1pd_reconstruct_sb(frm.super_blocks + d * wb + j, &frm, &ctx);
+        }
+    }
+    sum_dif=0;
+    for (int y = 0; y < pix_yuv.h; y++) {
+        for (int x = 0; x < pix_yuv.w; x++) {
+            int16_t a = *c1_pixbuf_geti16(&frm.pix, y, x); // default y plane
+            int16_t b = *c1_pixbuf_geti16(&pix_yuv, y, x);
+            sum_dif+=c1_abs_dif_i16(a, b);
+        }
+    }
+    info_("recon distortion: %u", sum_dif);
     
+    // view_p16(&dif1, 1, 1);
+    // view_p16(&dif2, 1, 1);
+    // view_p16(&dif3, 1, 1);
+    view_p16(&frm.pix, 1, 1);
+
     c1_pixbuf_clear(&pix_yuv);
     c1enc_frame_clear(&frm);
 }

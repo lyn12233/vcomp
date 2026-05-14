@@ -577,6 +577,7 @@ int c1pd_reconstruct(c1enc_block_t *b, c1enc_frame_t *frm, const c1enc_ctx_t *ct
         for (int i = 0; i < bh; i++) {
             for (int j = 0; j < bw; j++) {
                 c1_pixbuf_geti16(&frm->pix, by + i, bx + j)[ci] = pred_output[i * bw + j] + b->p[ci].diff[i * bw + j];
+                // c1_pixbuf_geti16(&frm->pix, by + i, bx + j)[ci] = 128;
             }
         }
     }

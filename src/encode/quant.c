@@ -1,5 +1,5 @@
 #include "quant.h"
-#include "types.h"
+#include "encode/types.h"
 #include "encoder.h"
 #include "math/transform.h"
 #include "tables.h"
@@ -73,45 +73,60 @@ static int32_t c1tx__measure(c1enc_block_t *b, int32_t(*coef[3]), //
  @param temp_out temporary output for txfm, size 3*bh*bw, conditionally copied to coef buf in "b".
  @param opt tx search option
 */
-static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, //
+static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out[3], //
                         c1tx_search_option_t opt, C1_2D_SZ tx_size, C1_TX_2D_TYPE tx_type) {
-    const int tx_hgt = c1_sz2hgt(tx_size), tx_wid = c1_sz2wid(tx_size);
+    const int txh = c1_sz2hgt(tx_size), txw = c1_sz2wid(tx_size);
     const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
-    const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
+    const int area = bw * bh;
 
     if (b->has_tx_cand && b->tx_inf.tx_size == tx_size && b->tx_inf.tx_type == tx_type)
         return 0;
 
-    memset(temp_out, 0, area * 3 * sizeof(int32_t)); // 3*bh*bw
-
     for (int ci = 0; ci < 3; ci++) {
+        memset(temp_out[ci], 0, area * sizeof(int32_t)); // 3*bh*bw
 
         int16_t *in = b->p[ci].diff; // bh*bw
-        int32_t *tx_out = temp_out + area * ci;
+        int32_t *tx_out = temp_out[ci];
 
-        for (int bi = 0; bi < bh; bi += tx_hgt) {
-            for (int bj = 0; bj < bw; bj += tx_wid) {
+        for (int bi = 0; bi < bh; bi += txh) {
+            for (int bj = 0; bj < bw; bj += txw) {
                 // gather compact residuals to temp from in
-                for (int i = 0; i < tx_hgt; i++) {
-                    for (int j = 0; j < tx_wid; j++) {
-                        temp_in[i * tx_wid + j] = in[(bi + i) * bw + bj + j];
+                for (int i = 0; i < txh; i++) {
+                    for (int j = 0; j < txw; j++) {
+                        temp_in[i * txw + j] = in[(bi + i) * bw + bj + j];
                     }
                 }
                 // transform
                 c1tx_option_t tx_opt = {.txsize = tx_size, .txtype = tx_type};
+
+                // if (ci == 0 && bi == txh * 3 && bj == 0) {
+                //     debug("tx from (size=%u, type=%u, block=%p)", tx_size, tx_type, b);
+                //     c1_dump_buf(temp_in, txh * txw * sizeof(int16_t));
+                // }
+
                 c1tx_txfm2d(temp_in, tx_out, &tx_opt);
-                tx_out += tx_hgt * tx_wid;
+
+                // if (ci == 0 && bi == txh * 3 && bj == 0) {
+                // if (txh == 8 && txw == 8 && bh == 64 && bw == 64) {
+                //     debug("parts of temp out at step ci=%u,bi=%u,bj=%u", ci, bi, bj);
+                //     c1_dump_buf(temp_out[0] + 48 * txh * txw, txh * txw * sizeof(int32_t));
+                // }
+
+                tx_out += txh * txw;
             }
         }
     }
-    int32_t cur_rate = c1tx__measure(b, (int32_t *[3]){temp_out, temp_out + area, temp_out + area * 2}, //
+    int32_t cur_rate = c1tx__measure(b, temp_out, //
                                      opt, tx_size, c1tx__get_scan_id(tx_type));
     // update tx info and coef case first or better
+    if (b->has_tx_cand) {
+        warning("unexpected");
+    }
     if (!b->has_tx_cand || b->tx_stat.r > cur_rate) {
         b->tx_inf = (c1enc_tx_inf_t){.tx_size = tx_size, .tx_type = tx_type};
         b->tx_stat = (c1enc_rdstat_t){.mask = C1_RD_RATE_BIT, .r = cur_rate};
         for (int ci = 0; ci < 3; ci++) {
-            memcpy(b->p[ci].coef, temp_out + area * ci, area * sizeof(int32_t));
+            memcpy(b->p[ci].coef, temp_out[ci], area * sizeof(int32_t));
         }
         b->has_tx_cand = 1;
     }
@@ -121,16 +136,18 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out, /
 
 static int c1tx__search_b(c1enc_block_t *b, c1tx_search_option_t opt) {
     // allocate temp buffers: temp_in+temp_out, together, i32[bh*bw*3]+i16[txh*txw]<=bh*bw*(3*4+2)
-    const int area = c1_sz2hgt(b->size) * c1_sz2wid(b->size);
-    int32_t *temp = malloc(area * (3 * sizeof(int32_t) + sizeof(int16_t)));
-    assert_fatal(temp);
+    const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+    int32_t *tmp_out[3]
+        = {malloc(bh * bw * sizeof(int32_t)), malloc(bh * bw * sizeof(int32_t)), malloc(bh * bw * sizeof(int32_t))};
+    int16_t *tmp_in = malloc(bh * bw * sizeof(int16_t));
 
     // traverse. courrently only considered squares
     for (C1_2D_SZ tx_size = C1_SZ_8_8; tx_size <= b->size && tx_size < C1_SZ_8_8 + opt.size_depth; tx_size++) {
         for (C1_TX_2D_TYPE tx_type = TX2TYPE_DCT_DCT; tx_type < opt.tx_rng_max; tx_type++) {
-            c1tx__try_tx(b, (void *)temp + area * 3, temp, opt, tx_size, tx_type);
+            c1tx__try_tx(b, tmp_in, tmp_out, opt, tx_size, tx_type);
         }
     }
+    free(tmp_in), free(tmp_out[0]), free(tmp_out[1]), free(tmp_out[2]);
     return 0;
 }
 
@@ -175,7 +192,20 @@ static int c1tx__b_recon(c1enc_block_t *b) {
             for (int bj = 0; bj < bw; bj += txw) {
                 // transform
                 c1tx_option_t tx_opt = {.txsize = tx_size, .txtype = tx_type};
+
+                // if (ci == 0 && bi == txh * 6 && bj == 0) {
+                // if (txh == 8 && txw == 8 && bh == 64 && bw == 64) {
+                //     debug("recon step ci=%u,bi=%u,bj=%u", ci, bi, bj);
+                //     c1_dump_buf(b->p[ci].coef + 48 * txh * txw, txh * txw * sizeof(int32_t));
+                // }
+
                 c1tx_inv_txfm2d(inv_tx_in, temp_out, &tx_opt);
+
+                // if (ci == 0 && bi == txh * 6 && bj == 0) {
+                //     debug("inv tx to: ");
+                //     c1_dump_buf(temp_out, txh * txw * sizeof(int16_t));
+                // }
+
                 inv_tx_in += txh * txw;
 
                 for (int i = 0; i < txh; i++) {
@@ -203,6 +233,7 @@ static int c1tx__part_recon(c1enc_partition_t *p) {
 }
 
 int c1tx_reconstruct(c1enc_super_block_t *sb) {
+    assert_fatal(sb->coef_bufs);
     return c1tx__part_recon(sb->root);
 }
 

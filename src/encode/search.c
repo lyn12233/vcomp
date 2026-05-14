@@ -879,7 +879,7 @@ int c1enc_search_sb(c1enc_super_block_t *sb, const c1_pixbuf_t *pix, const c1enc
     C1ENC_SEARCH_SB_STEP(2);
     // make SAD threshold adaptive. (4*4) is averaging 64x64->16x16 currently
     limited_opt.thre_sad_max_b = c1enc__search_decide_sad_max( //
-        sb->root->stats.sad / (2 * 2), limited_opt.thre_sad_max_b);
+        sb->root->stats.sad / (1 * 1), limited_opt.thre_sad_max_b);
 
     // C1ENC_SEARCH_SB_STEP(3);
     c1enc_search_merge(sb->root, pix, ctx, &limited_opt);
