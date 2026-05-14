@@ -676,6 +676,42 @@ int c1enc_get_coef(const c1enc_frame_t *frm, c1_pixbuf_t *pix) {
     }
     return 0;
 }
+static int c1enc__get_pred_type_part(const c1enc_partition_t *p, c1_pixbuf_t *pix) {
+    if (p->is_partition) {
+        for (int i = 0; i < 4; i++)
+            c1enc__get_pred_type_part(p->parts[i], pix);
+    } else {
+        const c1enc_block_t *b = p->b;
+        assert_fatal(b->pred_type_determined);
+        const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+        C1_PRED_MODE mode = b->pred_type == C1_PRED_INTRA ? b->intra_cands[0].mode_y : b->inter_cands[0].mode;
+        for (int i = 0; i < bh; i++) {
+            for (int j = 0; j < bh; j++) {
+                int16_t *out = c1_pixbuf_geti16(pix, i, j);
+                for (int ci = 0; ci < 3; ci++) {
+                    out[ci] = c1_color_map[mode % 32][ci];
+                }
+            }
+        }
+    }
+    return 0;
+}
+int c1enc_get_pred_type_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix) {
+    assert_fatal(pix->h == 64 && pix->w == 64 && pix->type == C1_PIXBUF_C3I16);
+    c1enc__get_pred_type_part(sb->root, pix);
+    return 0;
+}
+int c1enc_get_pred_type(const c1enc_frame_t *frm, c1_pixbuf_t *pix) {
+    for (int i = 0; i < frm->hgt_per_sb; i++) {
+        for (int j = 0; j < frm->wid_per_sb; j++) {
+            c1_pixbuf_t tmp
+                = c1_pixbuf_fromview(pix, (int[3]){i * 64, i * 64 + 64, 1}, (int[3]){j * 64, j * 64 + 64, 1});
+            c1enc_get_pred_type_sb(frm->super_blocks + i * frm->wid_per_sb + j, &tmp);
+            c1_pixbuf_clear(&tmp);
+        }
+    }
+    return 0;
+}
 
 //
 

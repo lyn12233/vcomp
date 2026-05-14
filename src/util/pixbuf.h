@@ -85,6 +85,30 @@ int c1_pixbuf_clear(c1_pixbuf_t *pix);
 // --- repr ---
 void c1_pixbuf_repr(FILE *f, const c1_pixbuf_t *pix);
 
+// --- helper ---
+
+// Color map for segmentation annotation (32 classes, RGB values)
+// Each row represents one class with RGB values (0-255)
+static const uint8_t c1_color_map[32][3] = {
+    //
+    {0, 0, 0},       /* Class 1 (red)*/ {255, 0, 0},              /* Class 2 (green)*/
+    {0, 255, 0},     /* Class 3 (blue)*/ {0, 0, 255},             /* Class 4 (yellow)*/
+    {255, 255, 0},   /* Class 5 (cyan)*/ {0, 255, 255},           /* Class 6 (magenta)*/
+    {255, 0, 255},   /* Class 7 (orange)*/ {255, 128, 0},         /* Class 8 (purple)*/
+    {128, 0, 255},   /* Class 9 (lime)*/ {128, 255, 0},           /* Class 10 (teal)*/
+    {0, 128, 128},   /* Class 11 (pink)*/ {255, 192, 203},        /* Class 12 (brown)*/
+    {139, 69, 19},   /* Class 13 (navy)*/ {0, 0, 128},            /* Class 14 (olive)*/
+    {128, 128, 0},   /* Class 15 (maroon)*/ {128, 0, 0},          /* Class 16 (forest */
+    {34, 139, 34},   /* Class 17 (royal */ {65, 105, 225},        /* Class 18 (gold)*/
+    {255, 215, 0},   /* Class 19 (coral)*/ {255, 127, 80},        /* Class 20 (indigo)*/
+    {75, 0, 130},    /* Class 21 (khaki)*/ {240, 230, 140},       /* Class 22 (lavender)*/
+    {230, 230, 250}, /* Class 23 (salmon)*/ {250, 128, 114},      /* Class 24 (thistle)*/
+    {216, 191, 216}, /* Class 25 (tomato)*/ {255, 99, 71},        /* Class 26 (turquoise)*/
+    {64, 224, 208},  /* Class 27 (violet)*/ {238, 130, 238},      /* Class 28 (wheat)*/
+    {245, 222, 179}, /* Class 29 (yellow-green)*/ {154, 205, 50}, /* Class 30 (steel blue)*/
+    {70, 130, 180},  /* Class 31 (dark orchid)*/ {153, 50, 204}   //
+};
+
 #ifdef __cplusplus
 }
 #endif

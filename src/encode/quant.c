@@ -267,7 +267,7 @@ static void c1__invert_quant(uint16_t *quant, uint16_t *shift, uint32_t q) {
     // (2) calc 16 bits mult which is 1.*2**(16) -> 0.*2**16, and avd 0
     uint32_t m = (1 << (16 + l + 1)) / q + 1; // 16+l: fraction bits + shift
     *quant = (uint16_t)(m - (1 << 16));       // multiplier to remnant
-    *shift = (uint16_t)l;                     // left shift l
+    *shift = (uint16_t)l + ((1 << l) < q);    // left shift l
 }
 
 void c1_lookup_init_q_inf() {
@@ -428,6 +428,9 @@ static void c1__quantize_pix(int32_t c, c1_quant_t q, int32_t *qc, int32_t *dqc)
     // (3) dequantize
     tmp32 = tmp32 * q.qstep;
     *dqc = (tmp32 ^ sign) - sign;
+    // if (c1_abs_i32(*dqc - c) > q.qstep / 2) {
+    //     warning("quant dev: %d->%d (qstep=%u,mult=%u,shift=%u)", c, *dqc, q.qstep, q.mult, q.shift);
+    // }
 }
 
 static int c1enc__quantize_b(c1enc_block_t *b, uint8_t qi) {

@@ -154,6 +154,9 @@ int c1enc_get_dif_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
 int c1enc_get_dif(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
 int c1enc_get_coef_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
 int c1enc_get_coef(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
+int c1enc_get_pred_type_sb(const c1enc_super_block_t*sb,c1_pixbuf_t*pix);
+int c1enc_get_pred_type(const c1enc_frame_t*sb,c1_pixbuf_t*pix);
+
 
 // --- --- all-in-one encoder proc --- ---
 

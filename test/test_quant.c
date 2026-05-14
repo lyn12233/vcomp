@@ -1,7 +1,6 @@
 #include "src/encode/quant.h"
 #include "src/encode/tables.h"
 
-
 #include <stdint.h>
 
 static void c1__invert_quant(uint32_t q) {
@@ -10,9 +9,9 @@ static void c1__invert_quant(uint32_t q) {
     while (tmp > 1)
         tmp >>= 1, l++;
     // (2) calc 16 bits mult which is 1.*2**(16) -> 0.*2**16, and avd 0
-    uint32_t m = (1 << (16 + l + 1)) / q + 1;  // 16+l: fraction bits + shift
-    uint16_t mult = (uint16_t)(m - (1 << 16)); // multiplier to remnant
-    uint16_t shift = (uint16_t)l;              // left shift l
+    uint32_t m = (1 << (16 + l + 1)) / q + 1;      // 16+l: fraction bits + shift
+    uint16_t mult = (uint16_t)(m - (1 << 16));     // multiplier to remnant
+    uint16_t shift = (uint16_t)l + ((1 << l) < q); // left shift l
     debug("mult: %u, shift: %u", mult, shift);
 }
 
@@ -37,8 +36,9 @@ static void c1__quantize_pix(int32_t c, c1_quant_t q) {
 
 int main() {
     c1__invert_quant(66);
-    c1__invert_quant(2);
-    c1_quant_t q = {7, 61565, 66};
-    info_("%u %u", q.qstep, q.mult);
-    c1__quantize_pix(1 << 15, q);
+    c1__invert_quant(33);
+    // c1_quant_t q = {7, 61565, 66};
+    // info_("%u %u", q.qstep, q.mult);
+    c1_quant_t q = {5, 61565, 33};
+    c1__quantize_pix(240, q);
 }

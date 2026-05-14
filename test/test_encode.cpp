@@ -16,6 +16,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/types_c.h>
 #include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 #include <stdio.h>
 
@@ -44,6 +45,27 @@ static void view_p16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
         c1_pixbuf_clear(&c);
     }
 }
+static void view_img16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
+    cv::Mat tmp(pix->h, pix->w, CV_16UC3);
+    memcpy(tmp.data, pix->buf->ptr, pix->h * pix->w * sizeof(int16_t) * 3);
+    cv::cvtColor(tmp, tmp, cv::COLOR_YUV2BGR);
+    cv::imshow("", tmp);
+    cv::waitKey();
+}
+
+static void view_img_rgb16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
+    c1_pixbuf_t pix_rgb = c1_pixbuf_cvt(pix, C1_PIXBUF_C3I8);
+    cv::Mat tmp(pix->h, pix->w, CV_8UC3);
+    for (int ci = 0; ci < chnls; ci++) {
+        for (int y = 0; y < pix->h; y++) {
+            for (int x = 0; x < pix->w; x++) {
+                tmp.data[(y * pix->w + x) * 3 + ci] = ((uint8_t *)c1_pixbuf_get(&pix_rgb, y, x))[ci];
+            }
+        }
+    }
+    cv::imshow("", tmp);
+    cv::waitKey();
+}
 
 int main() {
     std::ios_base::sync_with_stdio();
@@ -56,6 +78,8 @@ int main() {
     c1_pixbuf_clear(&pix);
 
     c1enc_frame_update(&frm, &pix_yuv);
+    // view_img16(&frm.pix, 1, 3);
+
     cout << "frame size:" << frm.hgt << " " << frm.wid << endl;
     cout << "frame type:" << (int)frm.frame_type << endl;
 
@@ -189,13 +213,13 @@ int main() {
         c1enc_sb_dealloc_coef_bufs(sb);
     }
     c1enc_get_dif(&frm, &dif2);
-    
-    uint32_t sum_dif=0;
+
+    uint32_t sum_dif = 0;
     for (int y = 0; y < dif1.h; y++) {
         for (int x = 0; x < dif1.w; x++) {
             int16_t a = *c1_pixbuf_geti16(&dif1, y, x); // default y plane
             int16_t b = *c1_pixbuf_geti16(&dif2, y, x);
-            sum_dif+=c1_abs_dif_i16(a, b);
+            sum_dif += c1_abs_dif_i16(a, b);
         }
     }
     info_("residual distortion: %u", sum_dif);
@@ -208,20 +232,20 @@ int main() {
             c1pd_reconstruct_sb(frm.super_blocks + d * wb + j, &frm, &ctx);
         }
     }
-    sum_dif=0;
+    sum_dif = 0;
     for (int y = 0; y < pix_yuv.h; y++) {
         for (int x = 0; x < pix_yuv.w; x++) {
             int16_t a = *c1_pixbuf_geti16(&frm.pix, y, x); // default y plane
             int16_t b = *c1_pixbuf_geti16(&pix_yuv, y, x);
-            sum_dif+=c1_abs_dif_i16(a, b);
+            sum_dif += c1_abs_dif_i16(a, b);
         }
     }
     info_("recon distortion: %u", sum_dif);
-    
+
     // view_p16(&dif1, 1, 1);
     // view_p16(&dif2, 1, 1);
     // view_p16(&dif3, 1, 1);
-    view_p16(&frm.pix, 1, 1);
+    view_img16(&frm.pix, 1, 3);
 
     c1_pixbuf_clear(&pix_yuv);
     c1enc_frame_clear(&frm);
