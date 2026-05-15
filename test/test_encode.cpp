@@ -13,13 +13,14 @@
 #include <ctime>
 #include <ios>
 #include <iostream>
+#include <stdio.h>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/types_c.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/imgproc/types_c.h>
 #include <opencv2/opencv.hpp>
-#include <stdio.h>
 
 using std::cout;
 using std::endl;
@@ -46,25 +47,11 @@ static void view_p16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
         c1_pixbuf_clear(&c);
     }
 }
-static void view_img16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
-    cv::Mat tmp(pix->h, pix->w, CV_16UC3);
-    memcpy(tmp.data, pix->buf->ptr, pix->h * pix->w * sizeof(int16_t) * 3);
-    cv::cvtColor(tmp, tmp, cv::COLOR_YUV2BGR);
-    cv::imshow("", tmp);
-    cv::waitKey();
-}
-
-static void view_img_rgb16(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
-    c1_pixbuf_t pix_rgb = c1_pixbuf_cvt(pix, C1_PIXBUF_C3I8);
+static void view_rgb8(const c1_pixbuf_t *pix, float scale = 1., int chnls = 3) {
     cv::Mat tmp(pix->h, pix->w, CV_8UC3);
-    for (int ci = 0; ci < chnls; ci++) {
-        for (int y = 0; y < pix->h; y++) {
-            for (int x = 0; x < pix->w; x++) {
-                tmp.data[(y * pix->w + x) * 3 + ci] = ((uint8_t *)c1_pixbuf_get(&pix_rgb, y, x))[ci];
-            }
-        }
-    }
-    cv::imshow("", tmp);
+    memcpy(tmp.data, pix->buf->ptr, pix->h * pix->w * sizeof(uint8_t) * 3);
+    cv::cvtColor(tmp, tmp, CV_RGB2BGR);
+    cv::imshow("RGB", tmp);
     cv::waitKey();
 }
 
@@ -78,7 +65,9 @@ int main() {
     // (1) prepare yuv frame
 
     cv::Mat img = cv::imread("test/img/screen_content_1.png");
+    cv::cvtColor(img, img, CV_RGB2BGR);
     c1_pixbuf_t pix = c1_pixbuf_from_ptr(C1_PIXBUF_C3I8, (uint16_t)img.size[0], (uint16_t)img.size[1], img.data);
+    view_rgb8(&pix);
     c1_pixbuf_t pix_yuv = c1_pixbuf_cvt_rgbi8_to_yuv16(&pix);
     c1_pixbuf_clear(&pix);
 
@@ -275,6 +264,9 @@ int main() {
     }
 
     // view_p16(&ctx.ref_frames[0],1,1); // correct
+    pix = c1_pixbuf_cvt_yuv16_to_rgbi8(&frm.pix);
+    view_rgb8(&pix);
+    c1_pixbuf_clear(&pix);
 
     // (9) next frame. test inter
 

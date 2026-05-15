@@ -162,9 +162,9 @@ struct c1enc_ctx_s {
     /** last n p-frames, to determine if a new i frame is necessary
      */
     uint8_t consecutive_p_cnt;
-    /** estimate qstep and qindex, qstep=0 for undefined. currently unused?
+    /** estimate qstep and qindex
      */
-    uint16_t est_qstep;
+    uint8_t has_est_qi;
     uint8_t est_qi;
     /** referenced data stored at per super block level.
         REF_FRAME_CNT slots aligned to REF_FRAME_CNT possible ref frames.

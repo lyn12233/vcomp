@@ -1,5 +1,7 @@
+#include <stdint.h>
 #include <stdio.h>
 
+#include "encode/types.h"
 #include "src/util/log.h"
 #include "src/util/pixbuf.h"
 
@@ -29,15 +31,26 @@ int main() {
     c1_pixbuf_clear(&pb4);
     c1_pixbuf_clear(&pb5);
 
-    pb = c1_pixbuf_create(C1_PIXBUF_C3I8, 1, 1);
-    uint8_t *ptr = c1_pixbuf_get(&pb, 0, 0);
-    ptr[0] = ptr[1] = ptr[2] = 255;
-    c1_pixbuf_repr(stdout, &pb);
-    pb2 = c1_pixbuf_cvt_rgbi8_to_yuv16(&pb);
-    c1_pixbuf_repr(stdout, &pb2);
-    c1_pixbuf_clear(&pb);
-    pb=c1_pixbuf_cvt_yuv16_to_rgbi8(&pb2);
-    c1_pixbuf_repr(stdout, &pb);
-    c1_pixbuf_clear(&pb);
-    c1_pixbuf_clear(&pb2);
+    for (int16_t r = 0; r < 256; r+=4) {
+        for (int16_t g = 0; g < 256; g += 4) {
+            for (int16_t b = 0; b < 256; b += 4) {
+                pb = c1_pixbuf_create(C1_PIXBUF_C3I8, 1, 1);
+                uint8_t *ptr = c1_pixbuf_get(&pb, 0, 0);
+                ptr[0] = (uint8_t)r, ptr[1] = (uint8_t)g, ptr[2] = (uint8_t)b;
+                // c1_pixbuf_repr(stdout, &pb);
+                pb2 = c1_pixbuf_cvt_rgbi8_to_yuv16(&pb);
+                // c1_pixbuf_repr(stdout, &pb2);
+                c1_pixbuf_clear(&pb);
+                pb = c1_pixbuf_cvt_yuv16_to_rgbi8(&pb2);
+                // c1_pixbuf_repr(stdout, &pb);
+                ptr = c1_pixbuf_get(&pb, 0, 0);
+                if (c1_abs_dif_i16(ptr[0], r) + c1_abs_dif_i16(ptr[1], g) + c1_abs_dif_i16(ptr[2], b) > 4) {
+                    warning("dev: %u,%u,%u -> %u,%u,%u", r, g, b, ptr[0], ptr[1], ptr[2]);
+                }
+                // assert_fatal();
+                c1_pixbuf_clear(&pb);
+                c1_pixbuf_clear(&pb2);
+            }
+        }
+    }
 }

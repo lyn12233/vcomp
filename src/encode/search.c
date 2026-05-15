@@ -358,6 +358,7 @@ int c1enc_block_gather_residual(c1enc_block_t *b, const c1_pixbuf_t *pix, const 
             }
         }
     } else {
+        assert_fatal_ex(ref_id != 0xff, "ref_id should be valid for inter frame(type=%d)", b->pred_type);
         const c1_pixbuf_t *ref_pix = c1enc_ctx_frame_at(ctx, pix, ref_id);
         const c1enc_mi_inter_t *mi = b->inter_cands;
         pred_opt.mode = C1_PRED_MVNEW;

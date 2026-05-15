@@ -759,23 +759,32 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
     }
     frm->frame_type = use_i_frame ? C1_FRAME_I : C1_FRAME_P;
 
-    // (2) search prediction
+    // (2) search prediction option
 
     // todo impl better ref_id
+    // ref_id is used for both search option and gather_residual's specific one?
+    // todo change gather_residual interface
     uint8_t ref_id = 1; // the previous first frame
 
     // ephemeral search opt impl
     c1enc_search_option_t srch_opt = {0};
     if (!use_i_frame) {
         srch_opt.try_inter = 1;
-        srch_opt.inter_init_steps_mask = 32 | 16 | 8 | 4;
-        srch_opt.inter_sad_subsamp_mask = (1 << 7) - (1 << 3);
-        srch_opt.inter_smooth_lambda = 0;
-        srch_opt.inter_newcand_cnt = C1_ENC_INTER_CAND_CNT;
+        srch_opt.inter_init_steps_mask = 4 | 1;
+        srch_opt.inter_sad_subsamp_mask = 64 | 32 | 16 | 8;
+
+        srch_opt.inter_newcand_cnt = 1;
+        srch_opt.inter_only_y = 1;
         srch_opt.inter_ref_idx = ref_id;
+        srch_opt.inter_smooth_lambda = 1;
+
+        // per pix per channel thresholds
+        srch_opt.thre_inter_efficient_sad = 5;
+        srch_opt.thre_skip_inter_sad = 64;
+        srch_opt.thre_intra_efficient_sad = 10;
     }
     srch_opt.try_intra = 1;
-    srch_opt.intra_try_uv = 1;
+    srch_opt.intra_try_uv = 0;
     srch_opt.intra_try_cfl = 0;
     srch_opt.intra_rng_max = C1_PRED_PAETH + 1;
     srch_opt.thre_mode_better_mult = 3;
@@ -783,37 +792,59 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
     srch_opt.thre_mat_is_dif_mult = 3;
     srch_opt.thre_mat_is_dif_shift = 2;
     srch_opt.thre_mat_is_dif_delta = 1 << 12;
-    // todo: impl
-    srch_opt.thre_sad_max_b = 1 << 12;
+    // todo: impl alike
+    // srch_opt.thre_sad_max_b = 1 << 12;
 
-    // search in a order that ensure prediction edges(at least bh+bw<=64*2) exist ?
     const int hb = frm->hgt_per_sb, wb = frm->wid_per_sb;
-    for (int idx = 0; idx < hb * wb; idx++) {
-        c1enc_search_sb(frm->super_blocks + idx, pix, ctx, &srch_opt);
-        // gather mode and diff
-        c1enc_part_gather_pred_type(frm->super_blocks[idx].root);
-        c1enc_part_gather_residual(frm->super_blocks[idx].root, pix, ctx, ref_id);
-    }
 
-    // (3) tx&quantize&recon
+    // (3) tx&quantize&recon option
+
     c1tx_search_option_t tx_opt = {0};
-    tx_opt.size_depth = 2;
+    tx_opt.size_depth = 1; // todo: ?
     tx_opt.measure = C1TX_MEASURE_NOP;
     tx_opt.tx_rng_max = TX2TYPE_DCT_DCT + 1;
-    for (int idx = 0; idx < hb * wb; idx++) {
-        c1tx_search_sb(frm->super_blocks + idx, tx_opt);
-        c1enc_sb_gather_qi(frm->super_blocks + idx, opt->qp);
-        c1enc_sb_dealloc_coef_bufs(frm->super_blocks + idx);
+    // currently tx search is too slow.
+    // tx_opt.measure = C1TX_MEASURE_RATE;
+    // tx_opt.tx_rng_max = TX2TYPE_IDEN + 1;
+
+    // (4) estimate frame qi first for the first time
+    // note: sine estimation only occurs on the first frame. ok to have some redundancy here.
+
+    if (!ctx->has_est_qi) {
+        for (int idx = 0; idx < hb * wb; idx++) {
+            c1enc_super_block_t *sb = frm->super_blocks + idx;
+            c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
+            c1enc_part_gather_pred_type(sb->root);
+            c1enc_part_gather_residual(sb->root, pix, ctx, use_i_frame ? 0xff : ref_id);
+
+            c1tx_search_sb(frm->super_blocks + idx, tx_opt);
+            c1enc_sb_gather_qi(frm->super_blocks + idx, opt->qp);
+            c1enc_sb_dealloc_coef_bufs(frm->super_blocks + idx);
+        }
+        c1enc_frame_gather_qi(frm, opt->qp);
+
+        ctx->est_qi = frm->q_index;
+        ctx->has_est_qi = 1;
     }
-    c1enc_frame_gather_qi(frm, opt->qp);
-    tx_opt.measure = C1TX_MEASURE_RATE;
-    tx_opt.tx_rng_max = TX2TYPE_IDEN + 1;
+
+    // (5) conduct all-in-one search and encode
+    // note: ref frame for intra frame(intrabc) is not impl currently. after impl intrabc and context options for
+    // ref_id, change the code "use_i_frame ? 0xff : ref_id".
+
     for (int idx = 0; idx < hb * wb; idx++) {
         c1enc_super_block_t *sb = frm->super_blocks + idx;
-        // currenty use y plance ac qstep to assess, todo: ?
-        tx_opt.qstep = c1_lookup_q_ac[0][sb->q_index];
+
+        c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
+        c1enc_part_gather_pred_type(sb->root);
+        c1enc_part_gather_residual(sb->root, pix, ctx, use_i_frame ? 0xff : ref_id);
+
         c1tx_search_sb(sb, tx_opt);
+
+        // todo: some ops to est qi and smooth it
+
         c1enc_quantize_sb(sb);
+
+        // todo: may conduct some write here
 
         c1enc_sb_dqc2c(sb);
         c1tx_reconstruct(sb);
