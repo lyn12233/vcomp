@@ -120,7 +120,7 @@ int c1enc_ctx_clear_entry(c1enc_ctx_t *ctx, uint8_t idx);
  this process simply occupies an index at the back of arrays whose sizes are restriced by REF_FRAME_CNT,
  and silently destruct overflowed frame refs. other ops are not included, e.g. clear refs case i-frame.
 */
-int c1enc_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm);
+int c1enc_ctx_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm);
 /** init ref_t with the given partition_t, recursively
  */
 int c1enc_ref_from_part(c1enc_ref_t *ref, const c1enc_partition_t *p);
@@ -161,8 +161,18 @@ int c1enc_get_pred_type(const c1enc_frame_t *sb, c1_pixbuf_t *pix);
 // --- --- all-in-one encoder proc --- ---
 
 typedef struct {
+    /** quantization parameter, 0-128, the higher the better the quality is. currently means the fraction of non zero coef to remain
+    */
     uint8_t qp;
+    /** max number of consecutive p frames. currently the single encoder profile is [IPPP...] order, simplest tx and pred search.
+    */
     uint8_t max_p_frames;
+    /** qi update interval
+    */
+    uint8_t sample_qi_prescaler;
+    uint8_t qi_delta_max;
+    /** rate control. unused here.
+    */
     uint32_t rate_per_sb;
 } c1enc_option_t;
 

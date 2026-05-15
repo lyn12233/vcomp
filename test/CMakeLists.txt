@@ -20,18 +20,18 @@ add_executable(test_encode test_encode.cpp)
 target_link_libraries(test_encode PRIVATE vcomp_util vcomp_enc)
 add_executable(test_quant test_quant.c)
 target_link_libraries(test_quant PRIVATE vcomp_util_asan vcomp_enc_asan)
-add_executable(test_encode_2 test_encode.c)
-target_link_libraries(test_encode_2 PRIVATE vcomp_util_asan vcomp_enc_asan)
+add_executable(test_encode_2 test_encode_2.cpp)
+target_link_libraries(test_encode_2 PRIVATE vcomp_util vcomp_enc)
 
 # for targets without asan
-foreach(targ test_ent test_pred test_encode)
+foreach(targ test_ent test_pred test_encode test_encode_2)
     target_link_libraries(${targ} PRIVATE vcomp_flags)
 endforeach()
 
 #for targets with asan
 foreach(targ 
     test_ent2 test_pixbuf test_tx test_blockd test_mem test_search
-    test_quant test_encode_2
+    test_quant 
 )
     target_link_libraries(${targ} PRIVATE vcomp_flags_asan)
     if(ENABLE_ASAN)
@@ -48,6 +48,6 @@ foreach(targ test_ent)
 endforeach()
 
 # for targets with opencv
-foreach(targ test_pred test_encode)
+foreach(targ test_pred test_encode test_encode_2)
     target_link_libraries(${targ} PRIVATE ${OpenCV_LIBS})
 endforeach()

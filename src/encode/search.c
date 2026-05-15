@@ -84,6 +84,7 @@ static void c1enc__calc_p_pred2dif(const c1enc_block_t *b, const c1_pixbuf_t *pi
     const int by = (int)b->sb_y * 64 + b->yoff;
     const int bx = (int)b->sb_x * 64 + b->xoff;
     c1_pixbuf_t ci_pix = c1_pixbuf_fromchnl(pix, opt->ci);
+    // debug2("bx,by,bh,bw: %u,%u,%u,%u",by,bx,bh,bw);
     for (int i = 0; i < bh; i++) {
         for (int j = 0; j < bw; j++) {
             int16_t *diff = &b->p[opt->ci].diff[i * bw + j];

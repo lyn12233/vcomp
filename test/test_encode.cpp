@@ -158,7 +158,7 @@ int main() {
         c1enc_sb_gather_qi(frm.super_blocks + idx, qp);
         c1enc_sb_dealloc_coef_bufs(frm.super_blocks + idx);
     }
-    c1enc_frame_gather_qi(&frm, 75);
+    c1enc_frame_gather_qi(&frm, 75, 8);
     info_("tx search + gather qi time: %llu", clock() - cnt0);
     c1_profile_repr(stdout, &c1tx_search_sb_prof, "min tx time", 1);
     cout << endl;
@@ -254,7 +254,7 @@ int main() {
     // view_p16(&frm.pix, 1, 3);
 
     // (8) update context and verify it
-    c1enc_push_ref(&ctx, &frm);
+    c1enc_ctx_push_ref(&ctx, &frm);
     for (int16_t y = 0; y < frm.pix.h; y++) {
         for (int16_t x = 0; x < frm.pix.w; x++) {
             c1enc_mv_t mvref = c1enc_get_mvref(&frm, &ctx, y / 64, x / 64, y % 64, x % 64, 1);
@@ -389,7 +389,7 @@ int main() {
         }
     }
     info_("recon distortion: %u", sum_dif);
-    c1enc_push_ref(&ctx, &frm);
+    c1enc_ctx_push_ref(&ctx, &frm);
     for (int16_t y = 64; y < frm.pix.h; y++) {
         for (int16_t x = 64; x < frm.pix.w; x++) {
             c1enc_mv_t mvref = c1enc_get_mvref(&frm, &ctx, y / 64, x / 64, y % 64, x % 64, 1);

@@ -482,34 +482,46 @@ int c1enc_ctx_clear_entry(c1enc_ctx_t *ctx, uint8_t idx) {
             c1enc_ref_clear(ctx->sb_refs[idx] + i * w + j);
         }
     }
+    c1_pixbuf_clear(ctx->ref_frames + idx);
     free(ctx->sb_refs[idx]);
     ctx->sb_refs[idx] = NULL;
-    c1_pixbuf_clear(ctx->ref_frames + idx);
+    free(ctx->ref_qis[idx]);
+    ctx->ref_qis[idx] = NULL;
     return 0;
 }
 
-int c1enc_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm) {
+int c1enc_ctx_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm) {
     // (1) push pixbuf. it should be dequant+inv tx result
     assert_fatal(ctx->avail_ref_cnt <= C1_ENC_REF_FRAME_CNT);
     if (ctx->avail_ref_cnt == C1_ENC_REF_FRAME_CNT) {
         c1enc_ctx_clear_entry(ctx, 0);
         memmove(ctx->ref_frames, ctx->ref_frames + 1, (C1_ENC_REF_FRAME_CNT - 1) * sizeof(c1_pixbuf_t));
         memmove(ctx->sb_refs, ctx->sb_refs + 1, (C1_ENC_REF_FRAME_CNT - 1) * sizeof(c1enc_ref_t *));
+        memmove(ctx->ref_qis, ctx->ref_qis + 1, (C1_ENC_REF_FRAME_CNT - 1) * sizeof(int8_t *));
     } else {
         ctx->avail_ref_cnt++;
     }
+    // (2.1) pix ref: dup a view
     const uint8_t idx = ctx->avail_ref_cnt - 1;
     ctx->ref_frames[idx] = c1_pixbuf_dupview(&frm->pix);
-    // (2) create ref for each super block in frame
+
+    // (2.2) create ref info for each super block in frame
     const uint16_t hb = frm->hgt_per_sb, wb = frm->wid_per_sb;
     ctx->sb_refs[idx] = malloc(sizeof(c1enc_ref_t) * hb * wb);
     assert_fatal(ctx->sb_refs[idx]);
     for (uint16_t sb_y = 0; sb_y < hb; sb_y++) {
         for (uint16_t sb_x = 0; sb_x < wb; sb_x++) {
             c1enc_ref_from_part(ctx->sb_refs[idx] + sb_y * wb + sb_x, frm->super_blocks[sb_y * wb + sb_x].root);
-            // if(sb_y==1&&sb_x==1){
-            //     debug("init sz: %u, wb:%u",ctx->sb_refs[idx][sb_y*wb+sb_x].size,wb);
-            // }
+        }
+    }
+    // (2.3) superblock qi refs
+    ctx->ref_qis[idx] = malloc(sizeof(int8_t) * hb * wb);
+    assert_fatal(ctx->ref_qis[idx]);
+    for (uint16_t sb_y = 0; sb_y < hb; sb_y++) {
+        for (uint16_t sb_x = 0; sb_x < wb; sb_x++) {
+            c1enc_super_block_t *sb = frm->super_blocks + sb_y * wb + sb_x;
+            assert_fatal_ex(sb->has_q_index, "sb %u,%u do not have q index", sb_y, sb_x);
+            ctx->ref_qis[idx][sb_y * wb + sb_x] = sb->q_index;
         }
     }
     return 0;
@@ -735,6 +747,7 @@ int c1enc_get_pred_type(const c1enc_frame_t *frm, c1_pixbuf_t *pix) {
 
 int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, const c1enc_option_t *opt) {
     // (0) in case resize or init
+    debug("(0)");
     c1enc_frame_update(frm, pix);
 
     // (1) frame type
@@ -750,16 +763,20 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
     if (!use_i_frame) {
         (void)0;
     }
-    // respond to frame type
+    // update context
     if (use_i_frame) {
         for (uint8_t idx = 0; idx < ctx->avail_ref_cnt; idx++) {
             c1enc_ctx_clear_entry(ctx, idx);
         }
         ctx->avail_ref_cnt = 0;
+        ctx->consecutive_p_cnt = 0;
     }
+    ctx->counter++;
+    // write back to frame type
     frm->frame_type = use_i_frame ? C1_FRAME_I : C1_FRAME_P;
 
     // (2) search prediction option
+    debug("(2)");
 
     // todo impl better ref_id
     // ref_id is used for both search option and gather_residual's specific one?
@@ -809,19 +826,20 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
 
     // (4) estimate frame qi first for the first time
     // note: sine estimation only occurs on the first frame. ok to have some redundancy here.
+    debug("(4)");
 
     if (!ctx->has_est_qi) {
         for (int idx = 0; idx < hb * wb; idx++) {
             c1enc_super_block_t *sb = frm->super_blocks + idx;
             c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
             c1enc_part_gather_pred_type(sb->root);
-            c1enc_part_gather_residual(sb->root, pix, ctx, use_i_frame ? 0xff : ref_id);
+            c1enc_part_gather_residual(sb->root, &frm->pix, ctx, use_i_frame ? 0xff : ref_id);
 
             c1tx_search_sb(frm->super_blocks + idx, tx_opt);
             c1enc_sb_gather_qi(frm->super_blocks + idx, opt->qp);
             c1enc_sb_dealloc_coef_bufs(frm->super_blocks + idx);
         }
-        c1enc_frame_gather_qi(frm, opt->qp);
+        c1enc_frame_gather_qi(frm, opt->qp, opt->qi_delta_max);
 
         ctx->est_qi = frm->q_index;
         ctx->has_est_qi = 1;
@@ -830,18 +848,31 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
     // (5) conduct all-in-one search and encode
     // note: ref frame for intra frame(intrabc) is not impl currently. after impl intrabc and context options for
     // ref_id, change the code "use_i_frame ? 0xff : ref_id".
+    debug("(5)");
 
     for (int idx = 0; idx < hb * wb; idx++) {
         c1enc_super_block_t *sb = frm->super_blocks + idx;
 
         c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
         c1enc_part_gather_pred_type(sb->root);
-        c1enc_part_gather_residual(sb->root, pix, ctx, use_i_frame ? 0xff : ref_id);
+        c1enc_part_gather_residual(sb->root, &frm->pix, ctx, use_i_frame ? 0xff : ref_id);
 
         c1tx_search_sb(sb, tx_opt);
 
         // todo: some ops to est qi and smooth it
-
+        uint8_t last_qi = ctx->ref_qis[ctx->avail_ref_cnt - ref_id][idx];
+        if (use_i_frame) {
+            c1enc_sb_gather_qi(sb, opt->qp);
+            c1enc_frame_broadcast_base_qi(frm, sb, opt->qi_delta_max);
+        } else if ((ctx->counter + idx) % opt->sample_qi_prescaler == 0) {
+            c1enc_sb_gather_qi(sb, opt->qp);
+            if (sb->q_index > last_qi + opt->qi_delta_max) {
+                sb->q_index = last_qi + opt->qi_delta_max;
+            }
+        } else {
+            sb->has_q_index = 1;
+            sb->q_index = last_qi;
+        }
         c1enc_quantize_sb(sb);
 
         // todo: may conduct some write here
@@ -853,9 +884,10 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
         c1enc_sb_dealloc_coef_bufs(sb);
     }
 
-    // (4) update ctx
+    // (6) update ctx
+    debug("(6)");
 
-    c1enc_push_ref(ctx, frm);
+    c1enc_ctx_push_ref(ctx, frm);
     ctx->est_qi = frm->q_index;
     ctx->consecutive_p_cnt += !use_i_frame;
 

@@ -81,7 +81,11 @@ static c1_quant_t c1q_get_q_inf(uint8_t ac, uint8_t plane, uint8_t idx) {
  @param frm frame instance
  @param qp quantization parameter, may be a part of a larger parm group
 */
-int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp);
+int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp, int8_t qi_delta_max);
+/** update q delta for superblocks given base q index at frame.
+ @param qdelta_max restricts q delta change.
+*/
+int c1enc_frame_broadcast_base_qi(c1enc_frame_t *frm, c1enc_super_block_t *sb, int8_t qdelta_max);
 /** gather i index at superblock level.
 
  currently impl 2 fixed qp control model:

@@ -359,7 +359,7 @@ static uint8_t c1enc__bisect_qi(const uint16_t lookup[256], uint16_t q, uint8_t 
     }
 }
 
-int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp) {
+int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp, int8_t qi_delta_max) {
     uint32_t tot_qi = 0;
     const uint32_t nb = frm->hgt_per_sb * frm->wid_per_sb;
     for (int i = 0; i < nb; i++) {
@@ -372,17 +372,22 @@ int c1enc_frame_gather_qi(c1enc_frame_t *frm, uint8_t qp) {
     for (int i = 0; i < nb; i++) {
         c1enc_sb_gather_qi(frm->super_blocks + i, qp);
         uint8_t qi = frm->super_blocks[i].q_index;
-        if (c1_abs_dif_i16(qi, frm->q_index) < 16)
+        if (c1_abs_dif_i16(qi, frm->q_index) < qi_delta_max)
             tot_qi += qi;
     }
     frm->q_index = (uint8_t)((tot_qi + nb / 2) / (nb));
 
     for (int i = 0; i < nb; i++) {
         c1enc_super_block_t *sb = frm->super_blocks + i;
-        int16_t qdelta = c1_clamp16(sb->q_index - frm->q_index, INT8_MIN, INT8_MAX);
-        sb->q_index_delta = (int8_t)qdelta;
-        sb->q_index = (uint8_t)(frm->q_index + qdelta);
+        c1enc_frame_broadcast_base_qi(frm, sb, qi_delta_max);
     }
+    return 0;
+}
+int c1enc_frame_broadcast_base_qi(c1enc_frame_t *frm, c1enc_super_block_t *sb, int8_t qdelta_max) {
+    assert_fatal(sb->has_q_index);
+    int8_t qdelta = (int8_t)c1_clamp16((int16_t)sb->q_index - frm->q_index, INT8_MIN, qdelta_max);
+    sb->q_index_delta = qdelta;
+    sb->q_index = (uint8_t)(frm->q_index + qdelta);
     return 0;
 }
 int c1enc_sb_gather_qi(c1enc_super_block_t *sb, uint8_t qp) {
@@ -474,6 +479,7 @@ static int c1enc__quantize_p(c1enc_partition_t *p, uint8_t qi) {
 
 int c1enc_quantize_sb(c1enc_super_block_t *sb) {
     assert_fatal_ex(sb->coef_bufs, "call to quantizer but coef(bufs) do not exist");
+    assert_fatal(sb->has_q_index);
     c1enc__quantize_p(sb->root, sb->q_index);
     return 0;
 }

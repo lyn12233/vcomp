@@ -23,7 +23,7 @@ extern "C" {
         - frame type:       105
         - motion vector:    115
         - rdstat:           125
-        - context:          140
+        - context:          150
         - frame_t:          170
         - super_block_t:    190
         - plane_t:          200
@@ -166,11 +166,15 @@ struct c1enc_ctx_s {
      */
     uint8_t has_est_qi;
     uint8_t est_qi;
+    /** general counter for frame, used for some interval based options
+    */
+    uint32_t counter;
     /** referenced data stored at per super block level.
         REF_FRAME_CNT slots aligned to REF_FRAME_CNT possible ref frames.
         each slot points to a h*w style array of ref_t, the same size as that of the sb's in corresponding frame.
     */
     struct c1enc_ref_s *sb_refs[C1_ENC_REF_FRAME_CNT]; // super block level reference info
+    uint8_t *ref_qis[C1_ENC_REF_FRAME_CNT];
 };
 typedef struct c1enc_ctx_s c1enc_ctx_t;
 
