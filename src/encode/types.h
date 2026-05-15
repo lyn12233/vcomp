@@ -319,14 +319,10 @@ typedef struct c1enc_partition_s c1enc_partition_t;
 struct c1enc_ref_s {
     uint8_t is_partition;
     uint8_t y, x; // maybe useful?
-    union {
-        struct c1enc_ref_s *refs[4];
-        struct {
-            C1_2D_SZ size;
-            c1enc_mv_t mv;
-            // other fields?
-        };
-    };
+    struct c1enc_ref_s *refs[4];
+    C1_2D_SZ size;
+    c1enc_mv_t mv;
+    // other fields?
 };
 typedef struct c1enc_ref_s c1enc_ref_t;
 

@@ -125,6 +125,9 @@ typedef struct {
     uint32_t thre_mat_is_dif_delta;
     // - max SAD of a block, may be fixed fraction of frame
     uint32_t thre_sad_max_b;
+    uint32_t thre_inter_efficient_sad; // if inter cand has PER PIX sad less than this, skip intra.
+    uint32_t thre_skip_inter_sad;      // if first inter per pix sad exceed this, early exit inter search.
+    uint32_t thre_intra_efficient_sad; // early exit intra search if current intra mode is efficient enough
 } c1enc_search_option_t;
 
 /** option validator
@@ -151,11 +154,27 @@ int c1enc_search_inter_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_c
 static inline int c1enc_search_b(c1enc_block_t *b, const c1_pixbuf_t *pix, const c1enc_ctx_t *ctx, //
                                  const c1enc_search_option_t *opt) {
     int r = 0;
+    const int bh = c1_sz2hgt(b->size), bw = c1_sz2wid(b->size);
+    if (b->inter_cand_cnt > 0 //
+        && b->inter_cand_stats[0].sad <= opt->thre_inter_efficient_sad * bh * bw * 3) {
+        // debug("inter mode enough(%u), skip intra search", b->inter_cand_stats[0].sad);
+        return r;
+    }
     // search inter first to skip major overhead in intra search
-    if (r >= 0 && opt->try_inter) {
+    // also skip this case scene change(inter not acceptable).
+    if (opt->try_inter //
+        && (b->inter_cand_cnt == 0 || b->inter_cand_stats[0].sad <= opt->thre_skip_inter_sad * bh * bw * 3)) {
         r = c1enc_search_inter_b(b, pix, ctx, opt);
     }
-    if (opt->try_intra) {
+    if (r < 0)
+        return r;
+    if (b->inter_cand_cnt > 0 //
+        && b->inter_cand_stats[0].sad <= opt->thre_inter_efficient_sad * bh * bw * 3) {
+        // debug("inter mode enough(%u), skip intra search", b->inter_cand_stats[0].sad);
+        return r;
+    }
+    if (opt->try_intra //
+        && (b->intra_cand_cnt == 0 || b->intra_cand_stats[0].sad > opt->thre_intra_efficient_sad * bh * bw * 3)) {
         r = c1enc_search_intra_b(b, pix, opt);
     }
     return r;
@@ -165,8 +184,9 @@ static inline int c1enc_search_p(c1enc_partition_t *p, const c1_pixbuf_t *pix, c
     int r = 0;
     if (p->is_partition) {
         for (int i = 0; i < 4; i++) {
-            if ((r = c1enc_search_p(p->parts[i], pix, ctx, opt)) < 0)
+            if ((r = c1enc_search_p(p->parts[i], pix, ctx, opt)) < 0) {
                 return r;
+            }
         }
     } else {
         if ((r = c1enc_search_b(p->b, pix, ctx, opt)) < 0)

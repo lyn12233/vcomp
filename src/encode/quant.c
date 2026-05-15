@@ -119,9 +119,6 @@ static int c1tx__try_tx(c1enc_block_t *b, int16_t *temp_in, int32_t *temp_out[3]
     int32_t cur_rate = c1tx__measure(b, temp_out, //
                                      opt, tx_size, c1tx__get_scan_id(tx_type));
     // update tx info and coef case first or better
-    if (b->has_tx_cand) {
-        warning("unexpected");
-    }
     if (!b->has_tx_cand || b->tx_stat.r > cur_rate) {
         b->tx_inf = (c1enc_tx_inf_t){.tx_size = tx_size, .tx_type = tx_type};
         b->tx_stat = (c1enc_rdstat_t){.mask = C1_RD_RATE_BIT, .r = cur_rate};
@@ -281,6 +278,7 @@ void c1_lookup_init_q_inf() {
             c1_lookup_q_ac_inf[ci][qi].qstep = c1_lookup_q_ac[ci][qi];
         }
     }
+    c1_lookup_q_inf_inited = 1;
 }
 
 static uint16_t c1enc__est_q_v1(const int32_t *coef, int nbcoef_log2, uint8_t qp) {

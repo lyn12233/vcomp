@@ -67,13 +67,7 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         assert_fatal(frm->super_blocks);
         memset(frm->super_blocks, 0, sizeof(c1enc_super_block_t) * hb * wb);
 
-        // 3. clear pix
-        if (frm->pix.buf) {
-            c1_pixbuf_clear(&frm->pix);
-            assert_fatal(!frm->pix.buf); // the sptr should be null
-        }
-
-        // 4. init info fields
+        // 3. init info fields
         frm->frame_type = C1_FRAME_I;
         frm->hgt = eh;
         frm->wid = ew;
@@ -84,10 +78,11 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     }
 
     // paste pix to frame
-    if (!frm->pix.buf) {
-        // pix not prepared, create one
-        frm->pix = c1_pixbuf_create(C1_PIXBUF_C3I16, eh, ew);
+    if (!frm->pix.buf) { // always a new pix instance
+        c1_pixbuf_clear(&frm->pix);
+        assert_fatal(!frm->pix.buf);
     }
+    frm->pix = c1_pixbuf_create(C1_PIXBUF_C3I16, eh, ew);
     c1_pixbuf_paste(&frm->pix, pix, 0, 0);
     for (uint16_t i = 0; i < hb; i++) {
         for (uint16_t j = 0; j < wb; j++)
@@ -315,7 +310,7 @@ int c1enc_partition_reset_cands(c1enc_partition_t *part) {
             c1enc_partition_reset_cands(part->parts[i]);
         }
     } else {
-        part->b->intra_cand_cnt = part->b->inter_cand_cnt = 0;
+        c1enc_block_reset_cands(part->b);
     }
     return 0;
 }
@@ -389,12 +384,7 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
     b->yoff = y, b->xoff = x;
     b->size = size;
 
-    b->has_ref_mv = 0;
-    b->has_tx_cand = 0;
-    b->intra_cand_cnt = 0;
-    b->inter_cand_cnt = 0;
-    b->cached_pred_stat_cnt = 0;
-    b->pred_type_determined = 0;
+    c1enc_block_reset_cands(b);
 
     // assign buf in sb for planes
     for (int ci = 0; ci < 3; ci++) {
@@ -455,8 +445,29 @@ void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind) {
         }
         fprintf(f, "\r\n");
     }
+    if (b->inter_cand_cnt > 0) {
+        c1__print_ind(f, ind + 4);
+        fprintf(f, "inter_cands: ");
+        for (int i = 0; i < b->inter_cand_cnt; i++) {
+            const c1enc_mi_inter_t *mi = b->inter_cands + i;
+            const c1enc_rdstat_t *stat = b->inter_cand_stats + i;
+            fprintf(f, "(%s, %+03d,%+03d, ", c1pd_mode2str(mi->mode), mi->mv.y, mi->mv.x);
+            fprintf(f, "SAD=%u", stat->sad);
+            fprintf(f, "), ");
+        }
+        fprintf(f, "\r\n");
+    }
     c1__print_ind(f, ind);
     fprintf(f, ")\r\n");
+}
+int c1enc_block_reset_cands(c1enc_block_t *b) {
+    b->has_ref_mv = 0;
+    b->has_tx_cand = 0;
+    b->intra_cand_cnt = 0;
+    b->inter_cand_cnt = 0;
+    b->cached_pred_stat_cnt = 0;
+    b->pred_type_determined = 0;
+    return 0;
 }
 
 // --- --- context accessing and referencing --- ---
@@ -490,12 +501,15 @@ int c1enc_push_ref(c1enc_ctx_t *ctx, const c1enc_frame_t *frm) {
     const uint8_t idx = ctx->avail_ref_cnt - 1;
     ctx->ref_frames[idx] = c1_pixbuf_dupview(&frm->pix);
     // (2) create ref for each super block in frame
-    const uint16_t h = frm->hgt_per_sb, w = frm->wid_per_sb;
-    ctx->sb_refs[idx] = malloc(sizeof(c1enc_ref_t) * h * w);
+    const uint16_t hb = frm->hgt_per_sb, wb = frm->wid_per_sb;
+    ctx->sb_refs[idx] = malloc(sizeof(c1enc_ref_t) * hb * wb);
     assert_fatal(ctx->sb_refs[idx]);
-    for (uint16_t sb_y = 0; sb_y < h; sb_y++) {
-        for (uint16_t sb_x = 0; sb_x < w; sb_x++) {
-            c1enc_ref_from_part(ctx->sb_refs[idx] + sb_y * w + sb_x, frm->super_blocks[sb_y * w + sb_x].root);
+    for (uint16_t sb_y = 0; sb_y < hb; sb_y++) {
+        for (uint16_t sb_x = 0; sb_x < wb; sb_x++) {
+            c1enc_ref_from_part(ctx->sb_refs[idx] + sb_y * wb + sb_x, frm->super_blocks[sb_y * wb + sb_x].root);
+            // if(sb_y==1&&sb_x==1){
+            //     debug("init sz: %u, wb:%u",ctx->sb_refs[idx][sb_y*wb+sb_x].size,wb);
+            // }
         }
     }
     return 0;
@@ -511,13 +525,14 @@ static c1enc_mv_t c1enc__block_get_mvref(const c1enc_block_t *b) {
 int c1enc_ref_from_part(c1enc_ref_t *ref, const c1enc_partition_t *p) {
     ref->is_partition = p->is_partition;
     ref->y = p->y, ref->x = p->x;
+    ref->size = p->size;
+    assert_fatal(ref->size <= C1_SZ_64_64); // ok
     if (p->is_partition) {
         for (int i = 0; i < 4; i++) {
             assert_fatal((ref->refs[i] = c1_mpool_alloc(&c1enc_ref_pool)));
             c1enc_ref_from_part(ref->refs[i], p->parts[i]);
         }
     } else {
-        ref->size = p->size;
         // get mv from block;
         const c1enc_block_t *b = p->b;
         ref->mv = c1enc__block_get_mvref(b);
@@ -539,12 +554,14 @@ int c1enc_ref_clear(c1enc_ref_t *ref) {
 // --- context access ---
 
 static c1enc_ref_t *c1enc__ref_at_fromref(c1enc_ref_t *ref, uint8_t y, uint8_t x) {
+    assert_fatal(ref->size <= C1_SZ_64_64);
     const uint8_t h = c1_sz2hgt(ref->size), w = c1_sz2wid(ref->size);
     assert_fatal(y >= ref->y && y < ref->y + h);
-    assert_fatal(x >= ref->x && x < ref->x + w);
+    assert_fatal_ex(x >= ref->x && x < ref->x + w, "x=%u,ref.x=%u,w=%u", x, ref->x, w);
     if (ref->is_partition) {
         // remind the order of parts: tl, tr, bl, br
         int idx = (y >= ref->y + h / 2) * 2 + (x >= ref->x + w / 2);
+        // debug("idx: %u, y,x,h,w: %u,%u,%u,%u", idx, y, x, h, w);
         return c1enc__ref_at_fromref(ref->refs[idx], y, x);
     } else {
         return ref;
@@ -553,13 +570,14 @@ static c1enc_ref_t *c1enc__ref_at_fromref(c1enc_ref_t *ref, uint8_t y, uint8_t x
 c1enc_ref_t *c1enc_ref_at(c1enc_ctx_t *ctx, uint16_t sb_y, uint16_t sb_x, uint8_t y, uint8_t x, uint8_t ref_id) {
     const int idx = (int)ctx->avail_ref_cnt - ref_id;
     assert_fatal(idx >= 0 && idx < ctx->avail_ref_cnt);
-    const uint16_t h = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
-    const uint16_t w = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
-    if (sb_y >= h || sb_x >= w) {
+    const uint16_t hb = C1_ROUND_UP(ctx->ref_frames[idx].h, 64);
+    const uint16_t wb = C1_ROUND_UP(ctx->ref_frames[idx].w, 64);
+
+    if (sb_y >= hb || sb_x >= wb) {
         warning("super block index out of range");
         return NULL;
     }
-    c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * w + sb_x;
+    c1enc_ref_t *sb_ref = ctx->sb_refs[idx] + sb_y * wb + sb_x;
     return c1enc__ref_at_fromref(sb_ref, y, x);
 }
 

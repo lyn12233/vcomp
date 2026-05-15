@@ -106,6 +106,7 @@ int c1enc_block_update(c1enc_block_t *b, c1enc_super_block_t *sb, C1_2D_SZ size,
 int c1enc_block_clear(c1enc_block_t *b);
 int c1enc_block_validate(c1enc_block_t *b);
 void c1enc_block_repr(FILE *f, const c1enc_block_t *b, int ind);
+int c1enc_block_reset_cands(c1enc_block_t *b);
 
 // --- --- super block info/context accessing and referencing --- ---
 
@@ -154,9 +155,8 @@ int c1enc_get_dif_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
 int c1enc_get_dif(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
 int c1enc_get_coef_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
 int c1enc_get_coef(const c1enc_frame_t *frm, c1_pixbuf_t *pix);
-int c1enc_get_pred_type_sb(const c1enc_super_block_t*sb,c1_pixbuf_t*pix);
-int c1enc_get_pred_type(const c1enc_frame_t*sb,c1_pixbuf_t*pix);
-
+int c1enc_get_pred_type_sb(const c1enc_super_block_t *sb, c1_pixbuf_t *pix);
+int c1enc_get_pred_type(const c1enc_frame_t *sb, c1_pixbuf_t *pix);
 
 // --- --- all-in-one encoder proc --- ---
 
