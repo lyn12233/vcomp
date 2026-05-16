@@ -171,6 +171,7 @@ typedef struct {
     */
     uint8_t sample_qi_prescaler;
     uint8_t qi_delta_max;
+    uint8_t update_cdf; // this should be invariant through whole encoder process
     /** rate control. unused here.
     */
     uint32_t rate_per_sb;

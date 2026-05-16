@@ -67,12 +67,26 @@ struct c1ent_dec_s {
 typedef struct c1ent_dec_s c1ent_dec_t;
 
 /** init encoder context.
+ @param[out] enc uninitialized encoder instance
  @param sz estimated encoded bits size in bytes
+ @return error code, always 0.
 */
 int c1ent_enc_init(c1ent_enc_t *enc, uint32_t sz);
 
+/** entropy-encode a symbol.
+ @param[in,out] enc encoder instance, encode result stored within.
+ @param[in] sym symbol index in the cdf description.
+ @param[in] cdf cdf(cumulative density function) description, should have nbsym+1 elements, (..,1<<15,0).
+ @param[in] nbsym number of symbols
+ @return error code
+*/
 int c1ent_encode_cdf(c1ent_enc_t *enc, int sym, const uint16_t *cdf, int nbsym);
 
+/** finish the currenty symbol encoding, propagate carries.
+ @param[in,out] enc encoder instance, holds the result buffer
+ @param[out] nbytes number of bytes of result. the result aligns to byte boundary
+ @return pointer to the encoded buffer. aavail until encoder is cleared. NULL for error.
+*/
 uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes);
 
 static void c1ent_enc_repr(const c1ent_enc_t *enc, FILE *f) {
@@ -80,6 +94,9 @@ static void c1ent_enc_repr(const c1ent_enc_t *enc, FILE *f) {
             enc->buf_sz, enc->precarry_sz, enc->offs, enc->low, enc->rng, enc->cnt);
 }
 
+/** release buf and precarry buf the encoder holds.
+ @return error code
+*/
 int c1ent_enc_clear(c1ent_enc_t *enc);
 
 /** init decoder context
@@ -92,7 +109,7 @@ int c1ent_dec_init(c1ent_dec_t *dec, uint32_t sz, //
                    int (*read_bits)(void *ctx, uint32_t bits), void *ctx);
 
 /** decoder exit process
- defined in av1 spec 8.2.3. seems to validate but drop some trailing unaligned bits?
+ defined in av1 spec 8.2.3. seems to align strictly with byte boundary
 */
 int c1ent_dec_exit(c1ent_dec_t *dec, //
                    int (*read_bits)(void *ctx, uint32_t bits), void *ctx);
@@ -117,7 +134,8 @@ void c1ent_update_cdf(uint16_t *cdf, uint8_t sym, uint8_t nbsym);
 typedef struct {
     const uint8_t *data;
     // size of data and offset in data (per bits)
-    uint32_t sz, offs;
+    uint32_t sz; // const
+    uint32_t offs;
 } c1ent_strstrm_t;
 
 /** read no more than 16 bits, compatible to read_bits param in dec functions */

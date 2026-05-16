@@ -142,13 +142,17 @@ uint8_t *c1ent_enc_done(c1ent_enc_t *enc, uint32_t *nbytes) {
 int c1ent_enc_clear(c1ent_enc_t *enc) {
     int res = 0;
     if (enc->buf) {
-        free(enc->buf), enc->buf_sz = 0;
+        free(enc->buf);
+        enc->buf_sz = 0;
+        enc->buf = NULL;
     } else {
         warning2("enc->buf is null ptr");
         res = -1;
     }
     if (enc->precarry_buf) {
-        free(enc->precarry_buf), enc->precarry_sz = 0;
+        free(enc->precarry_buf);
+        enc->precarry_sz = 0;
+        enc->precarry_buf = NULL;
     } else {
         warning2("enc->precarry_buf is null ptr");
         res = -1;

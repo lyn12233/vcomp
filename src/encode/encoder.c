@@ -54,6 +54,9 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
     // hgt and wid per super block
     uint16_t hb = eh / 64, wb = ew / 64;
 
+    // attrs
+    // always remains q_index (todo?)
+
     if (hb != frm->hgt_per_sb || wb != frm->wid_per_sb) {
         // frame size (after rounding) has changed.
         // 1. clear sb
@@ -73,8 +76,10 @@ int c1enc_frame_update(c1enc_frame_t *frm, const c1_pixbuf_t *pix) {
         frm->wid = ew;
         frm->hgt_per_sb = hb;
         frm->wid_per_sb = wb;
+        frm->size_change_or_init = 1;
     } else {
         frm->frame_type = C1_FRAME_P;
+        frm->size_change_or_init = 0;
     }
 
     // paste pix to frame
@@ -845,43 +850,60 @@ int c1enc_encode(c1enc_frame_t *frm, const c1_pixbuf_t *pix, c1enc_ctx_t *ctx, c
         ctx->has_est_qi = 1;
     }
 
+    // (4.5) frame heaader is all prepared, write
+    if (ctx->enc) {
+        //
+    }
+
     // (5) conduct all-in-one search and encode
     // note: ref frame for intra frame(intrabc) is not impl currently. after impl intrabc and context options for
     // ref_id, change the code "use_i_frame ? 0xff : ref_id".
     debug("(5)");
 
-    for (int idx = 0; idx < hb * wb; idx++) {
-        c1enc_super_block_t *sb = frm->super_blocks + idx;
+    // for (int idx = 0; idx < hb * wb; idx++) {
+    for (uint32_t d = 0; d < hb + wb; d++) {
+        const uint32_t stt = d < hb ? 0 : d - hb + 1;
+        const uint32_t end = d < wb ? d : wb - 1;
+        for (uint32_t ds = stt; ds <= end; ds++) {
+            const uint32_t idx = (d - ds) * wb + ds;
+            assert_fatal_ex(idx >= 0 && idx < hb * wb, "d=%u,ds=%u,stt=%u,end=%u,hb=%u,wb=%u", d, ds, stt, end, hb, wb);
 
-        c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
-        c1enc_part_gather_pred_type(sb->root);
-        c1enc_part_gather_residual(sb->root, &frm->pix, ctx, use_i_frame ? 0xff : ref_id);
+            c1enc_super_block_t *sb = frm->super_blocks + idx;
 
-        c1tx_search_sb(sb, tx_opt);
+            c1enc_search_sb(sb, &frm->pix, ctx, &srch_opt);
+            c1enc_part_gather_pred_type(sb->root);
+            c1enc_part_gather_residual(sb->root, &frm->pix, ctx, use_i_frame ? 0xff : ref_id);
 
-        // todo: some ops to est qi and smooth it
-        uint8_t last_qi = ctx->ref_qis[ctx->avail_ref_cnt - ref_id][idx];
-        if (use_i_frame) {
-            c1enc_sb_gather_qi(sb, opt->qp);
-            c1enc_frame_broadcast_base_qi(frm, sb, opt->qi_delta_max);
-        } else if ((ctx->counter + idx) % opt->sample_qi_prescaler == 0) {
-            c1enc_sb_gather_qi(sb, opt->qp);
-            if (sb->q_index > last_qi + opt->qi_delta_max) {
-                sb->q_index = last_qi + opt->qi_delta_max;
+            c1tx_search_sb(sb, tx_opt);
+
+            // todo: some ops to est qi and smooth it
+            if (use_i_frame) {
+                c1enc_sb_gather_qi(sb, opt->qp);
+                c1enc_frame_broadcast_base_qi(frm, sb, opt->qi_delta_max);
+            } else if ((ctx->counter + idx) % opt->sample_qi_prescaler == 0) {
+                const uint8_t last_qi = ctx->ref_qis[ctx->avail_ref_cnt - ref_id][idx];
+                c1enc_sb_gather_qi(sb, opt->qp);
+                if (sb->q_index > last_qi + opt->qi_delta_max) {
+                    sb->q_index = last_qi + opt->qi_delta_max;
+                }
+            } else {
+                const uint8_t last_qi = ctx->ref_qis[ctx->avail_ref_cnt - ref_id][idx];
+                sb->has_q_index = 1;
+                sb->q_index = last_qi;
             }
-        } else {
-            sb->has_q_index = 1;
-            sb->q_index = last_qi;
+            c1enc_quantize_sb(sb);
+
+            // todo: may conduct some write here
+            if (ctx->enc) {
+                //
+            }
+
+            c1enc_sb_dqc2c(sb);
+            c1tx_reconstruct(sb);
+
+            c1pd_reconstruct_sb(sb, frm, ctx); // pred is done again here.
+            c1enc_sb_dealloc_coef_bufs(sb);
         }
-        c1enc_quantize_sb(sb);
-
-        // todo: may conduct some write here
-
-        c1enc_sb_dqc2c(sb);
-        c1tx_reconstruct(sb);
-
-        c1pd_reconstruct_sb(sb, frm, ctx); // pred is done again here.
-        c1enc_sb_dealloc_coef_bufs(sb);
     }
 
     // (6) update ctx

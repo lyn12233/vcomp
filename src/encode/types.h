@@ -167,14 +167,18 @@ struct c1enc_ctx_s {
     uint8_t has_est_qi;
     uint8_t est_qi;
     /** general counter for frame, used for some interval based options
-    */
+     */
     uint32_t counter;
     /** referenced data stored at per super block level.
         REF_FRAME_CNT slots aligned to REF_FRAME_CNT possible ref frames.
         each slot points to a h*w style array of ref_t, the same size as that of the sb's in corresponding frame.
     */
     struct c1enc_ref_s *sb_refs[C1_ENC_REF_FRAME_CNT]; // super block level reference info
+    /** q index refernce data */
     uint8_t *ref_qis[C1_ENC_REF_FRAME_CNT];
+    /** stream encoder context. these are external references. can be NULL */
+    struct c1_encstrm_s *enc;
+    struct c1_cdf_ctx_s *cdfs; // share existence status with "enc"
 };
 typedef struct c1enc_ctx_s c1enc_ctx_t;
 
@@ -190,8 +194,9 @@ struct c1enc_frame_s {
     C1_FRAME_TYPE frame_type; // also a early stage frame type indicator
 
     uint8_t q_index;
-    int8_t q_index_delta;
+    // int8_t q_index_delta;
 
+    uint8_t size_change_or_init;
     uint16_t hgt;
     uint16_t wid;
     uint16_t hgt_per_sb;
